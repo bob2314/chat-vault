@@ -91,9 +91,22 @@ export async function ensurePostgresSchema() {
         created_at TIMESTAMPTZ NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS import_events (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        processed_count INTEGER NOT NULL,
+        imported_count INTEGER NOT NULL,
+        created_count INTEGER NOT NULL,
+        updated_count INTEGER NOT NULL,
+        skipped_count INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_user_conversation ON messages(user_id, conversation_id, id);
       CREATE INDEX IF NOT EXISTS idx_search_events_user_created ON search_events(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_import_events_user_created ON import_events(user_id, created_at DESC);
     `);
   })();
 

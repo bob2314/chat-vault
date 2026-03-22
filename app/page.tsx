@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { ImportPanel } from "@/components/import-panel";
-import { SearchPanel } from "@/components/search-panel";
+import { VaultWorkspace } from "@/components/vault-workspace";
 import { getSessionUser } from "@/lib/auth";
 import { ensureUserRecord, getAnalytics, listSavedSearches, searchConversationsForUser } from "@/lib/db";
 
@@ -44,10 +43,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        <section className="grid two">
-          <SearchPanel initialData={initialResults} initialSavedSearches={savedSearches} />
-          <ImportPanel />
-        </section>
+        <VaultWorkspace initialData={initialResults} initialSavedSearches={savedSearches} />
       </div>
     </main>
   );

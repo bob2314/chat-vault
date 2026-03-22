@@ -1,3 +1,4 @@
+import AdmZip from "adm-zip";
 import type { ImportPayload, ImportedConversation, ImportedMessage, Role } from "@/types";
 import { inferTopics } from "@/lib/topic-rules";
 import { slugify, uniqueStrings } from "@/lib/utils";
@@ -114,4 +115,24 @@ export function normalizePayload(payload: unknown): ImportPayload {
   });
 
   return { conversations };
+}
+
+export function normalizePayloadFromUpload(input: { fileName: string; buffer: Buffer }): ImportPayload {
+  const lowerName = input.fileName.toLowerCase();
+  const isZip = lowerName.endsWith(".zip") || input.buffer.subarray(0, 2).toString("hex") === "504b";
+
+  if (!isZip) {
+    const text = input.buffer.toString("utf8");
+    return normalizePayload(JSON.parse(text));
+  }
+
+  const zip = new AdmZip(input.buffer);
+  const entries = zip.getEntries().filter((entry) => !entry.isDirectory);
+  const conversationEntry = entries.find((entry) => entry.entryName.toLowerCase().endsWith("conversations.json"));
+  if (!conversationEntry) {
+    throw new Error("Could not find conversations.json in ZIP export.");
+  }
+
+  const jsonText = conversationEntry.getData().toString("utf8");
+  return normalizePayload(JSON.parse(jsonText));
 }

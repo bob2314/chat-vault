@@ -8,6 +8,7 @@ import {
   ensureUserRecordPostgres,
   getAnalyticsPostgres,
   getConversationPostgres,
+  getImportStatusForUserPostgres,
   importConversationsForUserPostgres,
   listSavedSearchesPostgres,
   saveSearchPostgres,
@@ -119,6 +120,19 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS import_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    processed_count INTEGER NOT NULL,
+    imported_count INTEGER NOT NULL,
+    created_count INTEGER NOT NULL,
+    updated_count INTEGER NOT NULL,
+    skipped_count INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE VIRTUAL TABLE IF NOT EXISTS conversation_search USING fts5(
     user_id UNINDEXED,
     conversation_id UNINDEXED,
@@ -145,6 +159,10 @@ const deleteTagsStmt = db.prepare("DELETE FROM conversation_tags WHERE user_id =
 const insertTagStmt = db.prepare("INSERT OR IGNORE INTO conversation_tags (user_id, conversation_id, tag) VALUES (?, ?, ?)");
 const deleteTopicsStmt = db.prepare("DELETE FROM conversation_topics WHERE user_id = ? AND conversation_id = ?");
 const insertTopicStmt = db.prepare("INSERT OR IGNORE INTO conversation_topics (user_id, conversation_id, topic) VALUES (?, ?, ?)");
+const insertImportEventStmt = db.prepare(`
+  INSERT INTO import_events (user_id, source, processed_count, imported_count, created_count, updated_count, skipped_count, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
 
 export async function createUser({ email, name, password }: { email: string; name: string; password: string }) {
   if (usePostgres) {
@@ -177,17 +195,45 @@ export async function authenticateUser({ email, password }: { email: string; pas
   return { id: user.id, email: user.email, name: user.name } satisfies SessionUser;
 }
 
-export async function importConversationsForUser(userId: string, payload: unknown) {
+export async function importConversationsForUser(
+  userId: string,
+  payload: unknown,
+  options?: { source?: "manual" | "gpt_sync" }
+) {
   if (usePostgres) {
-    return importConversationsForUserPostgres(userId, payload);
+    return importConversationsForUserPostgres(userId, payload, options);
   }
 
   const normalized = normalizePayload(payload);
   const provider = getSearchProvider();
+  const source = options?.source ?? "manual";
+  const syncedAt = new Date().toISOString();
+  const existingConversationStmt = db.prepare(
+    "SELECT full_text, updated_at FROM conversations WHERE user_id = ? AND id = ?"
+  );
+  const conversationsToIndex: Array<(typeof normalized.conversations)[number]> = [];
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
 
   const transaction = db.transaction(() => {
     for (const conversation of normalized.conversations) {
       const fullText = conversation.messages.map((message) => `[${message.role}] ${message.content}`).join("\n\n");
+      const existing = existingConversationStmt.get(userId, conversation.id) as
+        | { full_text: string; updated_at: string }
+        | undefined;
+      const unchanged = existing?.full_text === fullText && existing?.updated_at === conversation.updatedAt;
+
+      if (unchanged) {
+        skipped += 1;
+        continue;
+      }
+
+      if (existing) {
+        updated += 1;
+      } else {
+        created += 1;
+      }
 
       upsertConversationStmt.run({
         id: conversation.id,
@@ -213,12 +259,14 @@ export async function importConversationsForUser(userId: string, payload: unknow
       for (const topic of conversation.topics ?? []) {
         insertTopicStmt.run(userId, conversation.id, topic);
       }
+
+      conversationsToIndex.push(conversation);
     }
   });
 
   transaction();
 
-  for (const conversation of normalized.conversations) {
+  for (const conversation of conversationsToIndex) {
     const fullText = conversation.messages.map((message) => `[${message.role}] ${message.content}`).join("\n\n");
     await provider.upsertConversationIndex({
       userId,
@@ -233,9 +281,53 @@ export async function importConversationsForUser(userId: string, payload: unknow
     });
   }
 
+  insertImportEventStmt.run(
+    userId,
+    source,
+    normalized.conversations.length,
+    created + updated,
+    created,
+    updated,
+    skipped,
+    syncedAt
+  );
+
   return {
-    imported: normalized.conversations.length,
-    provider: provider.getName()
+    imported: created + updated,
+    processed: normalized.conversations.length,
+    created,
+    updated,
+    skipped,
+    provider: provider.getName(),
+    source,
+    syncedAt
+  };
+}
+
+export async function getImportStatusForUser(userId: string) {
+  if (usePostgres) {
+    return getImportStatusForUserPostgres(userId);
+  }
+
+  const lastImport = db.prepare(`
+    SELECT source, created_at
+    FROM import_events
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(userId) as { source: string; created_at: string } | undefined;
+  const lastGptSync = db.prepare(`
+    SELECT created_at
+    FROM import_events
+    WHERE user_id = ? AND source = 'gpt_sync'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(userId) as { created_at: string } | undefined;
+
+  return {
+    lastImportAt: lastImport?.created_at ?? null,
+    lastImportSource: lastImport?.source ?? null,
+    lastGptSyncAt: lastGptSync?.created_at ?? null
   };
 }
 

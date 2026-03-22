@@ -5,6 +5,7 @@ Search, filter, and rediscover archived AI conversations with fast full-text sea
 ## What It Does
 
 - Imports conversation history from JSON payloads or ChatGPT-style exports
+- Supports one-click "Sync from GPT" ZIP import flow
 - Supports fast search with filters (`query`, `tag`, `topic`)
 - Stores saved searches per user
 - Tracks no-result searches and daily search activity
@@ -108,6 +109,7 @@ ChatGPT export support:
 - Accepts rough `conversations.json`-style arrays
 - Extracts message text from mapping trees
 - Infers timestamps and titles when possible
+- Accepts official ChatGPT export ZIP uploads and reads `conversations.json`
 
 ## Notes
 

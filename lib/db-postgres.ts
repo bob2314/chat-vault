@@ -55,17 +55,47 @@ export async function authenticateUserPostgres({ email, password }: { email: str
   return { id: user.id, email: user.email, name: user.name } satisfies SessionUser;
 }
 
-export async function importConversationsForUserPostgres(userId: string, payload: unknown) {
+export async function importConversationsForUserPostgres(
+  userId: string,
+  payload: unknown,
+  options?: { source?: "manual" | "gpt_sync" }
+) {
   await ensurePostgresSchema();
   const db = getPostgresPool();
   const normalized = normalizePayload(payload);
   const provider = getSearchProvider();
+  const source = options?.source ?? "manual";
+  const syncedAt = new Date().toISOString();
+  const conversationsToIndex: Array<(typeof normalized.conversations)[number]> = [];
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
 
   const client = await db.connect();
   try {
     await client.query("BEGIN");
     for (const conversation of normalized.conversations) {
       const fullText = conversation.messages.map((message) => `[${message.role}] ${message.content}`).join("\n\n");
+      const existingResult = await client.query<{ full_text: string; updated_at: Date }>(
+        "SELECT full_text, updated_at FROM conversations WHERE user_id = $1 AND id = $2 LIMIT 1",
+        [userId, conversation.id]
+      );
+      const existing = existingResult.rows[0];
+      const unchanged =
+        Boolean(existing) &&
+        existing.full_text === fullText &&
+        new Date(existing.updated_at).toISOString() === conversation.updatedAt;
+
+      if (unchanged) {
+        skipped += 1;
+        continue;
+      }
+
+      if (existing) {
+        updated += 1;
+      } else {
+        created += 1;
+      }
 
       await client.query(
         `
@@ -112,6 +142,8 @@ export async function importConversationsForUserPostgres(userId: string, payload
           [userId, conversation.id, topic]
         );
       }
+
+      conversationsToIndex.push(conversation);
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -121,7 +153,7 @@ export async function importConversationsForUserPostgres(userId: string, payload
     client.release();
   }
 
-  for (const conversation of normalized.conversations) {
+  for (const conversation of conversationsToIndex) {
     const fullText = conversation.messages.map((message) => `[${message.role}] ${message.content}`).join("\n\n");
     await provider.upsertConversationIndex({
       userId,
@@ -136,9 +168,54 @@ export async function importConversationsForUserPostgres(userId: string, payload
     });
   }
 
+  await db.query(
+    `
+      INSERT INTO import_events (user_id, source, processed_count, imported_count, created_count, updated_count, skipped_count, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `,
+    [userId, source, normalized.conversations.length, created + updated, created, updated, skipped, syncedAt]
+  );
+
   return {
-    imported: normalized.conversations.length,
-    provider: provider.getName()
+    imported: created + updated,
+    processed: normalized.conversations.length,
+    created,
+    updated,
+    skipped,
+    provider: provider.getName(),
+    source,
+    syncedAt
+  };
+}
+
+export async function getImportStatusForUserPostgres(userId: string) {
+  await ensurePostgresSchema();
+  const db = getPostgresPool();
+  const lastImport = await db.query<{ source: string; created_at: Date }>(
+    `
+      SELECT source, created_at
+      FROM import_events
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [userId]
+  );
+  const lastGptSync = await db.query<{ created_at: Date }>(
+    `
+      SELECT created_at
+      FROM import_events
+      WHERE user_id = $1 AND source = 'gpt_sync'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  return {
+    lastImportAt: lastImport.rows[0]?.created_at ? new Date(lastImport.rows[0].created_at).toISOString() : null,
+    lastImportSource: lastImport.rows[0]?.source ?? null,
+    lastGptSyncAt: lastGptSync.rows[0]?.created_at ? new Date(lastGptSync.rows[0].created_at).toISOString() : null
   };
 }
 
