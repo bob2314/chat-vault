@@ -114,3 +114,41 @@ ChatGPT export support:
 - This is a pragmatic POC focused on speed of iteration.
 - Search provider is runtime-configurable with env vars.
 - Typesense is optional; app falls back to local provider when unavailable.
+
+## Release Checklist
+
+Use this before first deploy (or when reviving the project after a while).
+
+### 1) Environment sanity
+
+- [ ] Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- [ ] Set `CLERK_SECRET_KEY`
+- [ ] Set `DB_PROVIDER` and matching DB vars:
+  - SQLite: `DATABASE_PATH`
+  - Postgres: `DATABASE_URL`
+- [ ] Set search mode (`SEARCH_PROVIDER=sqlite|postgres|typesense`)
+- [ ] If using Typesense, set `TYPESENSE_*` variables
+
+### 2) Local infra and app health
+
+- [ ] `npm run preflight` passes
+- [ ] `npm run infra:up` (if Postgres/Typesense are used)
+- [ ] `npm run infra:status` shows healthy services
+- [ ] `npm run db:init`
+- [ ] `npm run db:seed` (optional, but useful for smoke testing)
+- [ ] `npm run build` passes
+
+### 3) Smoke tests
+
+- [ ] Sign up/sign in with Clerk
+- [ ] Import a JSON file with `Choose file` + `Import now`
+- [ ] Run a search query and open a result conversation
+- [ ] Save a search and re-run it from Saved Searches
+- [ ] Open Dashboard and confirm heatmap/no-result metrics update
+
+### 4) Pre-deploy sanity
+
+- [ ] Confirm `.env.local` and `env.local` are not committed
+- [ ] Confirm DB connection points to target environment
+- [ ] Confirm app port/runtime config for target platform
+- [ ] Push latest `main` and verify remote is up to date
