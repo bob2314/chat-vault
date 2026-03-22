@@ -2,6 +2,8 @@
 
 Search, filter, and rediscover archived AI conversations with fast full-text search, tags/topics, saved searches, and analytics.
 
+<img width="520" height="665" alt="image" src="https://github.com/user-attachments/assets/e942c1cb-4de5-4922-bb88-bf2849d30b4c" />
+
 ## What It Does
 
 - Imports conversation history from JSON payloads or ChatGPT-style exports
