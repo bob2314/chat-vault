@@ -1,0 +1,13 @@
+node_modules
+.next
+.vercel
+*.log
+.env*
+!.env.example
+env.local
+data/*.db
+data/*.sqlite
+data/*
+coverage
+.DS_Store
+.vscode

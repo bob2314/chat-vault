@@ -1,0 +1,45 @@
+{
+  "name": "chat-vault-poc",
+  "version": "0.2.0",
+  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000",
+    "lint": "next lint",
+    "preflight": "node scripts/preflight.mjs",
+    "up": "node scripts/up.mjs",
+    "db:init": "tsx scripts/init-db.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "infra:up": "npm run preflight && node scripts/compose.mjs up -d",
+    "infra:status": "node scripts/compose.mjs ps",
+    "infra:down": "node scripts/compose.mjs down",
+    "infra:logs": "node scripts/compose.mjs logs -f"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.39.1",
+    "better-sqlite3": "^11.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.511.0",
+    "next": "14.2.25",
+    "pg": "^8.16.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typesense": "^2.0.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.15.29",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.25",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}

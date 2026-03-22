@@ -1,0 +1,66 @@
+{
+  "conversations": [
+    {
+      "id": "philly-apartment-search",
+      "title": "Philadelphia apartment search",
+      "createdAt": "2026-02-09T18:00:00.000Z",
+      "updatedAt": "2026-02-09T18:45:00.000Z",
+      "tags": ["housing", "philly", "apartments"],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Find nice apartment options in Center City to Old City Philadelphia with fitness center, balcony, hardwood floors, dishwasher, walk in closet, parking and up to $3800.",
+          "createdAt": "2026-02-09T18:00:00.000Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Possible fits include newer amenity-heavy buildings near Society Hill and Center City. We should compare fees, parking, and floor plans.",
+          "createdAt": "2026-02-09T18:03:00.000Z"
+        },
+        {
+          "role": "user",
+          "content": "We liked the Ryland vibe but I am worried about ongoing fees and whether higher floors are quieter.",
+          "createdAt": "2026-02-09T18:10:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "sprinter-insurance",
+      "title": "LA vs Philly insurance",
+      "createdAt": "2026-02-13T14:00:00.000Z",
+      "updatedAt": "2026-02-13T14:18:00.000Z",
+      "tags": ["finance", "insurance", "vehicles"],
+      "messages": [
+        {
+          "role": "user",
+          "content": "How different would auto insurance be between Los Angeles and Philadelphia for a 2022 Mercedes Sprinter 2500 4x4 and maybe a 2026 Toyota 4Runner Limited?",
+          "createdAt": "2026-02-13T14:00:00.000Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Philadelphia is often somewhat cheaper than Los Angeles for comparable coverage, but the exact gap depends on garage situation, annual mileage, and policy structure.",
+          "createdAt": "2026-02-13T14:05:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cursor-search-engine-idea",
+      "title": "Companion search engine app idea",
+      "createdAt": "2026-03-21T19:00:00.000Z",
+      "updatedAt": "2026-03-21T19:20:00.000Z",
+      "tags": ["software", "search", "cursor", "poc"],
+      "messages": [
+        {
+          "role": "user",
+          "content": "I want a fast searchable app that stores and sorts user chats with wildcard search, topic drill-down, tags, and maybe heatmaps or analytics.",
+          "createdAt": "2026-03-21T19:00:00.000Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Do not start with Elasticsearch. Use a sane POC stack like Next.js, Postgres or SQLite for truth, and a lightweight search layer before getting fancy.",
+          "createdAt": "2026-03-21T19:10:00.000Z"
+        }
+      ]
+    }
+  ]
+}

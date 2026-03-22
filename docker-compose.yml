@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chat-vault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chatvault
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - chat_vault_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatvault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  typesense:
+    image: typesense/typesense:0.25.2
+    container_name: chat-vault-typesense
+    restart: unless-stopped
+    command: "--data-dir /data --api-key=xyz --enable-cors"
+    ports:
+      - "8108:8108"
+    volumes:
+      - chat_vault_typesense_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -lc \"exec 3<>/dev/tcp/127.0.0.1/8108 && echo -e 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\""
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  chat_vault_postgres_data:
+  chat_vault_typesense_data:

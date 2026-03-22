@@ -1,0 +1,101 @@
+import { Pool } from "pg";
+
+let pool: Pool | null = null;
+let schemaReady: Promise<void> | null = null;
+
+function requireDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required when DB_PROVIDER=postgres");
+  }
+  return databaseUrl;
+}
+
+export function getPostgresPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: requireDatabaseUrl()
+    });
+  }
+  return pool;
+}
+
+export async function ensurePostgresSchema() {
+  if (schemaReady) return schemaReady;
+
+  schemaReady = (async () => {
+    const db = getPostgresPool();
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        full_text TEXT NOT NULL,
+        message_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, id)
+      );
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ,
+        FOREIGN KEY (user_id, conversation_id) REFERENCES conversations(user_id, id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS conversation_tags (
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (user_id, conversation_id, tag),
+        FOREIGN KEY (user_id, conversation_id) REFERENCES conversations(user_id, id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS conversation_topics (
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        PRIMARY KEY (user_id, conversation_id, topic),
+        FOREIGN KEY (user_id, conversation_id) REFERENCES conversations(user_id, id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS saved_searches (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        query TEXT NOT NULL,
+        tag TEXT,
+        topic TEXT,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS search_events (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        query TEXT NOT NULL,
+        tag TEXT,
+        topic TEXT,
+        result_count INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_user_conversation ON messages(user_id, conversation_id, id);
+      CREATE INDEX IF NOT EXISTS idx_search_events_user_created ON search_events(user_id, created_at DESC);
+    `);
+  })();
+
+  return schemaReady;
+}
