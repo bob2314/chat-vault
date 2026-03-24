@@ -30,6 +30,10 @@ export function hashPassword(password: string) {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
 
+export function sha256(input: string) {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
 export function signSession(user: SessionUser, secret: string) {
   const payload = Buffer.from(
     JSON.stringify({

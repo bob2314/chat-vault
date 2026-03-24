@@ -100,13 +100,34 @@ export async function ensurePostgresSchema() {
         created_count INTEGER NOT NULL,
         updated_count INTEGER NOT NULL,
         skipped_count INTEGER NOT NULL,
+        source_max_updated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL
+      );
+
+      ALTER TABLE import_events ADD COLUMN IF NOT EXISTS source_max_updated_at TIMESTAMPTZ;
+
+      CREATE TABLE IF NOT EXISTS capture_events (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        source_url TEXT,
+        parser_version TEXT NOT NULL,
+        captured_at TIMESTAMPTZ NOT NULL,
+        processed_at TIMESTAMPTZ NOT NULL,
+        conversation_external_id TEXT,
+        content_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        raw_payload JSONB NOT NULL,
+        normalized_payload JSONB,
+        result_summary JSONB
       );
 
       CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_user_conversation ON messages(user_id, conversation_id, id);
       CREATE INDEX IF NOT EXISTS idx_search_events_user_created ON search_events(user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_import_events_user_created ON import_events(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_capture_events_user_created ON capture_events(user_id, processed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_capture_events_user_hash ON capture_events(user_id, content_hash);
     `);
   })();
 

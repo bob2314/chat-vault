@@ -128,11 +128,34 @@ export function normalizePayloadFromUpload(input: { fileName: string; buffer: Bu
 
   const zip = new AdmZip(input.buffer);
   const entries = zip.getEntries().filter((entry) => !entry.isDirectory);
-  const conversationEntry = entries.find((entry) => entry.entryName.toLowerCase().endsWith("conversations.json"));
-  if (!conversationEntry) {
-    throw new Error("Could not find conversations.json in ZIP export.");
+  const conversationEntries = entries
+    .filter((entry) => {
+      const lower = entry.entryName.toLowerCase();
+      const base = lower.split("/").at(-1) || lower;
+      return /^conversations(?:-\d+)?\.json$/.test(base);
+    })
+    .sort((a, b) => a.entryName.localeCompare(b.entryName));
+
+  if (conversationEntries.length === 0) {
+    throw new Error("Could not find conversations JSON files in ZIP export.");
   }
 
-  const jsonText = conversationEntry.getData().toString("utf8");
-  return normalizePayload(JSON.parse(jsonText));
+  const combinedConversations: unknown[] = [];
+  for (const entry of conversationEntries) {
+    const jsonText = entry.getData().toString("utf8");
+    const parsed = JSON.parse(jsonText) as unknown;
+    if (Array.isArray(parsed)) {
+      combinedConversations.push(...parsed);
+      continue;
+    }
+    if (parsed && typeof parsed === "object" && Array.isArray((parsed as { conversations?: unknown[] }).conversations)) {
+      combinedConversations.push(...(parsed as { conversations: unknown[] }).conversations);
+    }
+  }
+
+  if (combinedConversations.length === 0) {
+    throw new Error("Conversations JSON files were found, but no conversations could be parsed.");
+  }
+
+  return normalizePayload(combinedConversations);
 }

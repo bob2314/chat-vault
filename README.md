@@ -8,6 +8,7 @@ Search, filter, and rediscover archived AI conversations with fast full-text sea
 
 - Imports conversation history from JSON payloads or ChatGPT-style exports
 - Supports one-click "Sync from GPT" ZIP import flow
+- Includes bookmarklet-based "sync current chat page" capture flow
 - Supports fast search with filters (`query`, `tag`, `topic`)
 - Stores saved searches per user
 - Tracks no-result searches and daily search activity
@@ -112,6 +113,13 @@ ChatGPT export support:
 - Extracts message text from mapping trees
 - Infers timestamps and titles when possible
 - Accepts official ChatGPT export ZIP uploads and reads `conversations.json`
+
+Bookmarklet capture support:
+
+- Click `Copy Sync Bookmarklet` in the Import panel
+- Save the copied code as a browser bookmark
+- Open a ChatGPT conversation page and click that bookmark
+- Chat Vault opens `/capture` and pushes the current visible conversation into your vault
 
 ## Notes
 

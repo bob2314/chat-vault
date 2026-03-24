@@ -10,6 +10,73 @@ export function ImportPanel() {
   const [statusTone, setStatusTone] = useState<"neutral" | "success" | "error">("neutral");
   const [importing, setImporting] = useState(false);
   const [lastGptSyncAt, setLastGptSyncAt] = useState<string | null>(null);
+  const [lastGptSourceUpdatedAt, setLastGptSourceUpdatedAt] = useState<string | null>(null);
+  const [bookmarkletStatus, setBookmarkletStatus] = useState<string | null>(null);
+
+  function getBookmarkletCode(appOrigin: string) {
+    const source = `
+      (() => {
+        try {
+          const appOrigin = ${JSON.stringify(appOrigin)};
+          const captureUrl = appOrigin + "/capture";
+          const popup = window.open(captureUrl, "_blank");
+          if (!popup) {
+            alert("Popup blocked. Please allow popups for this action.");
+            return;
+          }
+
+          const nodes = Array.from(document.querySelectorAll('[data-message-author-role]'));
+          const messages = nodes
+            .map((node) => {
+              const roleRaw = node.getAttribute("data-message-author-role") || "user";
+              const role = roleRaw === "assistant" || roleRaw === "system" ? roleRaw : "user";
+              const content = (node.innerText || "").trim();
+              return { role, content };
+            })
+            .filter((item) => item.content.length > 0);
+
+          if (!messages.length) {
+            alert("No messages detected on this page.");
+            return;
+          }
+
+          const titleFromH1 = document.querySelector("h1")?.textContent?.trim();
+          const conversationIdMatch = window.location.pathname.match(/\\/c\\/([a-zA-Z0-9-]+)/);
+          const conversationId = conversationIdMatch ? ("chatgpt-" + conversationIdMatch[1]) : undefined;
+          const title = titleFromH1 || document.title.replace(/\\s*-\\s*ChatGPT\\s*$/i, "").trim() || "ChatGPT conversation";
+          const now = new Date().toISOString();
+          const payload = {
+            source: "chatvault-bookmarklet",
+            payload: {
+              source: "chatgpt-bookmarklet",
+              source_url: window.location.href,
+              captured_at: now,
+              parser_version: "bookmarklet-v1",
+              conversation: {
+                external_id: conversationId,
+                title,
+                created_at: now,
+                updated_at: now,
+                messages: messages.map((message) => ({
+                  role: message.role,
+                  content: message.content
+                }))
+              }
+            }
+          };
+
+          const send = () => popup.postMessage(payload, appOrigin);
+          setTimeout(send, 600);
+          setTimeout(send, 1500);
+          setTimeout(send, 2800);
+        } catch (error) {
+          alert("Bookmarklet failed: " + (error?.message || error));
+        }
+      })();
+    `;
+
+    return `javascript:${source.replace(/\s+/g, " ").trim()}`;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -20,6 +87,7 @@ export function ImportPanel() {
         const data = await response.json();
         if (!cancelled) {
           setLastGptSyncAt(typeof data.lastGptSyncAt === "string" ? data.lastGptSyncAt : null);
+          setLastGptSourceUpdatedAt(typeof data.lastGptSourceUpdatedAt === "string" ? data.lastGptSourceUpdatedAt : null);
         }
       } catch {
         // quiet fail: import panel still works without status fetch
@@ -33,6 +101,11 @@ export function ImportPanel() {
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      await syncFromGptZip(file);
+      event.target.value = "";
+      return;
+    }
     try {
       const text = await file.text();
       setPayload(text);
@@ -71,9 +144,7 @@ export function ImportPanel() {
     }
   }
 
-  async function handleGptSyncFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  async function syncFromGptZip(file: File) {
     setStatus(null);
     setStatusTone("neutral");
     setImporting(true);
@@ -93,12 +164,35 @@ export function ImportPanel() {
       if (typeof data.syncedAt === "string") {
         setLastGptSyncAt(data.syncedAt);
       }
+      if (typeof data.sourceMaxUpdatedAt === "string") {
+        setLastGptSourceUpdatedAt(data.sourceMaxUpdatedAt);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sync failed.");
       setStatusTone("error");
     } finally {
       setImporting(false);
-      event.target.value = "";
+    }
+  }
+
+  async function handleGptSyncFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await syncFromGptZip(file);
+    event.target.value = "";
+  }
+
+  async function copyBookmarklet() {
+    setBookmarkletStatus(null);
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API unavailable in this browser.");
+      }
+      const code = getBookmarkletCode(window.location.origin);
+      await navigator.clipboard.writeText(code);
+      setBookmarkletStatus("Bookmarklet copied. Add it to your bookmarks bar, then click it on a ChatGPT conversation.");
+    } catch (error) {
+      setBookmarkletStatus(error instanceof Error ? error.message : "Could not copy bookmarklet.");
     }
   }
 
@@ -111,8 +205,17 @@ export function ImportPanel() {
           <p className="meta" style={{ marginTop: 6 }}>
             Last GPT sync: {lastGptSyncAt ? new Date(lastGptSyncAt).toLocaleString() : "never"}
           </p>
+          <p className="meta" style={{ marginTop: 4 }}>
+            Last GPT source update seen: {lastGptSourceUpdatedAt ? new Date(lastGptSourceUpdatedAt).toLocaleString() : "unknown"}
+          </p>
         </div>
       </div>
+      <div className="button-row" style={{ marginBottom: 12 }}>
+        <button className="button secondary" type="button" onClick={copyBookmarklet}>
+          Copy Sync Bookmarklet
+        </button>
+      </div>
+      {bookmarkletStatus ? <p className="meta" style={{ marginBottom: 12 }}>{bookmarkletStatus}</p> : null}
       <textarea
         className="textarea"
         rows={16}
@@ -136,7 +239,7 @@ export function ImportPanel() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,.txt,application/json,text/plain"
+          accept=".json,.txt,.zip,application/json,text/plain,application/zip,application/x-zip-compressed"
           onChange={handleFileChange}
           style={{ display: "none" }}
         />

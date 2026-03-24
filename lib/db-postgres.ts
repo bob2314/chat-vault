@@ -66,6 +66,12 @@ export async function importConversationsForUserPostgres(
   const provider = getSearchProvider();
   const source = options?.source ?? "manual";
   const syncedAt = new Date().toISOString();
+  const sourceMaxUpdatedAt = normalized.conversations.reduce<string | null>((max, conversation) => {
+    const candidate = conversation.updatedAt ?? null;
+    if (!candidate) return max;
+    if (!max) return candidate;
+    return Date.parse(candidate) > Date.parse(max) ? candidate : max;
+  }, null);
   const conversationsToIndex: Array<(typeof normalized.conversations)[number]> = [];
   let created = 0;
   let updated = 0;
@@ -170,10 +176,10 @@ export async function importConversationsForUserPostgres(
 
   await db.query(
     `
-      INSERT INTO import_events (user_id, source, processed_count, imported_count, created_count, updated_count, skipped_count, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO import_events (user_id, source, processed_count, imported_count, created_count, updated_count, skipped_count, source_max_updated_at, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `,
-    [userId, source, normalized.conversations.length, created + updated, created, updated, skipped, syncedAt]
+    [userId, source, normalized.conversations.length, created + updated, created, updated, skipped, sourceMaxUpdatedAt, syncedAt]
   );
 
   return {
@@ -184,7 +190,8 @@ export async function importConversationsForUserPostgres(
     skipped,
     provider: provider.getName(),
     source,
-    syncedAt
+    syncedAt,
+    sourceMaxUpdatedAt
   };
 }
 
@@ -201,9 +208,9 @@ export async function getImportStatusForUserPostgres(userId: string) {
     `,
     [userId]
   );
-  const lastGptSync = await db.query<{ created_at: Date }>(
+  const lastGptSync = await db.query<{ created_at: Date; source_max_updated_at: Date | null }>(
     `
-      SELECT created_at
+      SELECT created_at, source_max_updated_at
       FROM import_events
       WHERE user_id = $1 AND source = 'gpt_sync'
       ORDER BY created_at DESC
@@ -215,8 +222,54 @@ export async function getImportStatusForUserPostgres(userId: string) {
   return {
     lastImportAt: lastImport.rows[0]?.created_at ? new Date(lastImport.rows[0].created_at).toISOString() : null,
     lastImportSource: lastImport.rows[0]?.source ?? null,
-    lastGptSyncAt: lastGptSync.rows[0]?.created_at ? new Date(lastGptSync.rows[0].created_at).toISOString() : null
+    lastGptSyncAt: lastGptSync.rows[0]?.created_at ? new Date(lastGptSync.rows[0].created_at).toISOString() : null,
+    lastGptSourceUpdatedAt: lastGptSync.rows[0]?.source_max_updated_at
+      ? new Date(lastGptSync.rows[0].source_max_updated_at).toISOString()
+      : null
   };
+}
+
+export async function recordCaptureEventPostgres(
+  userId: string,
+  input: {
+    source: string;
+    sourceUrl?: string | null;
+    parserVersion: string;
+    capturedAt: string;
+    processedAt: string;
+    conversationExternalId?: string | null;
+    contentHash: string;
+    status: "saved" | "updated" | "skipped" | "rejected" | "error";
+    rawPayload: unknown;
+    normalizedPayload?: unknown;
+    resultSummary?: unknown;
+  }
+) {
+  await ensurePostgresSchema();
+  const db = getPostgresPool();
+  await db.query(
+    `
+      INSERT INTO capture_events (
+        user_id, source, source_url, parser_version, captured_at, processed_at,
+        conversation_external_id, content_hash, status, raw_payload, normalized_payload, result_summary
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb)
+    `,
+    [
+      userId,
+      input.source,
+      input.sourceUrl ?? null,
+      input.parserVersion,
+      input.capturedAt,
+      input.processedAt,
+      input.conversationExternalId ?? null,
+      input.contentHash,
+      input.status,
+      JSON.stringify(input.rawPayload),
+      input.normalizedPayload ? JSON.stringify(input.normalizedPayload) : null,
+      input.resultSummary ? JSON.stringify(input.resultSummary) : null
+    ]
+  );
 }
 
 export async function searchConversationsForUserPostgres({
