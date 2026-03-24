@@ -11,3 +11,4 @@ data/*
 coverage
 .DS_Store
 .vscode
+Chat-Export-*.zip

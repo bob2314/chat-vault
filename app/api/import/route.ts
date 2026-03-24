@@ -18,7 +18,8 @@ export async function POST(request: Request) {
     await ensureUserRecord(user);
     let payload: unknown;
     const contentType = request.headers.get("content-type") || "";
-    let source: "manual" | "gpt_sync" = "manual";
+    const requestedSource = new URL(request.url).searchParams.get("source");
+    let source: "manual" | "gpt_sync" = requestedSource === "gpt_sync" ? "gpt_sync" : "manual";
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const file = form.get("file");
@@ -30,7 +31,9 @@ export async function POST(request: Request) {
         fileName: file.name,
         buffer: Buffer.from(arrayBuffer)
       });
-      source = "gpt_sync";
+      if (source === "manual") {
+        source = "gpt_sync";
+      }
     } else {
       payload = await request.json();
     }

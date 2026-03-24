@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import JSZip from "jszip";
 
 export function ImportPanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -98,6 +99,83 @@ export function ImportPanel() {
     };
   }, []);
 
+  function toNumber(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+
+  function maxIsoTimestamp(a: string | null, b: string | null) {
+    if (!a) return b;
+    if (!b) return a;
+    return a > b ? a : b;
+  }
+
+  function buildConversationChunks(conversations: unknown[], options?: { maxChunkBytes?: number; maxItems?: number }) {
+    const maxChunkBytes = options?.maxChunkBytes ?? 2_500_000;
+    const maxItems = options?.maxItems ?? 40;
+    const chunks: unknown[][] = [];
+    const encoder = new TextEncoder();
+    let current: unknown[] = [];
+    let currentBytes = 2; // []
+
+    for (const conversation of conversations) {
+      const serialized = JSON.stringify(conversation);
+      const serializedBytes = encoder.encode(serialized).length;
+      const itemBytes = serializedBytes + (current.length > 0 ? 1 : 0); // comma
+      const needsSplit = current.length > 0 && (current.length >= maxItems || currentBytes + itemBytes > maxChunkBytes);
+
+      if (needsSplit) {
+        chunks.push(current);
+        current = [];
+        currentBytes = 2;
+      }
+
+      current.push(conversation);
+      currentBytes += serializedBytes + (current.length > 1 ? 1 : 0);
+    }
+
+    if (current.length > 0) {
+      chunks.push(current);
+    }
+
+    return chunks;
+  }
+
+  async function extractConversationsFromZip(file: File) {
+    const zip = await JSZip.loadAsync(file);
+    const conversationEntries = Object.values(zip.files)
+      .filter((entry) => {
+        if (entry.dir) return false;
+        const lower = entry.name.toLowerCase();
+        const base = lower.split("/").at(-1) || lower;
+        return /^conversations(?:-\d+)?\.json$/.test(base);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (conversationEntries.length === 0) {
+      throw new Error("Could not find conversations JSON files in ZIP export.");
+    }
+
+    const combinedConversations: unknown[] = [];
+
+    for (const entry of conversationEntries) {
+      const text = await entry.async("text");
+      const parsed = JSON.parse(text) as unknown;
+      if (Array.isArray(parsed)) {
+        combinedConversations.push(...parsed);
+        continue;
+      }
+      if (parsed && typeof parsed === "object" && Array.isArray((parsed as { conversations?: unknown[] }).conversations)) {
+        combinedConversations.push(...(parsed as { conversations: unknown[] }).conversations);
+      }
+    }
+
+    if (combinedConversations.length === 0) {
+      throw new Error("Conversations JSON files were found, but no conversations could be parsed.");
+    }
+
+    return combinedConversations;
+  }
+
   async function readApiResponse(response: Response) {
     const contentType = response.headers.get("content-type") || "";
     const bodyText = await response.text();
@@ -119,6 +197,47 @@ export function ImportPanel() {
     }
 
     return {};
+  }
+
+  async function importConversationsInChunks(conversations: unknown[]) {
+    const chunks = buildConversationChunks(conversations);
+    let processed = 0;
+    let imported = 0;
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let latestSyncedAt: string | null = null;
+    let latestSourceUpdatedAt: string | null = null;
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      setStatus(`Uploading GPT export chunk ${index + 1}/${chunks.length} (${chunk.length} conversations)...`);
+      const response = await fetch("/api/import?source=gpt_sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chunk)
+      });
+      const data = await readApiResponse(response);
+      if (!response.ok) {
+        throw new Error((typeof data.error === "string" && data.error) || "Sync failed.");
+      }
+
+      processed += toNumber(data.processed);
+      imported += toNumber(data.imported);
+      created += toNumber(data.created);
+      updated += toNumber(data.updated);
+      skipped += toNumber(data.skipped);
+      latestSyncedAt = maxIsoTimestamp(latestSyncedAt, typeof data.syncedAt === "string" ? data.syncedAt : null);
+      latestSourceUpdatedAt = maxIsoTimestamp(
+        latestSourceUpdatedAt,
+        typeof data.sourceMaxUpdatedAt === "string" ? data.sourceMaxUpdatedAt : null
+      );
+    }
+
+    setStatus(`Synced from GPT export: ${imported} imported (${created} new, ${updated} updated, ${skipped} skipped) across ${processed} processed.`);
+    setStatusTone("success");
+    if (latestSyncedAt) setLastGptSyncAt(latestSyncedAt);
+    if (latestSourceUpdatedAt) setLastGptSourceUpdatedAt(latestSourceUpdatedAt);
   }
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -172,24 +291,9 @@ export function ImportPanel() {
     setStatusTone("neutral");
     setImporting(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch("/api/import", {
-        method: "POST",
-        body: formData
-      });
-      const data = await readApiResponse(response);
-      if (!response.ok) throw new Error((typeof data.error === "string" && data.error) || "Sync failed.");
-      setStatus(
-        `Synced from GPT export: ${data.imported} imported (${data.created} new, ${data.updated} updated, ${data.skipped} skipped).`
-      );
-      setStatusTone("success");
-      if (typeof data.syncedAt === "string") {
-        setLastGptSyncAt(data.syncedAt);
-      }
-      if (typeof data.sourceMaxUpdatedAt === "string") {
-        setLastGptSourceUpdatedAt(data.sourceMaxUpdatedAt);
-      }
+      setStatus("Reading ZIP and preparing chunked import...");
+      const conversations = await extractConversationsFromZip(file);
+      await importConversationsInChunks(conversations);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sync failed.");
       setStatusTone("error");
