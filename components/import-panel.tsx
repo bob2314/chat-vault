@@ -98,6 +98,29 @@ export function ImportPanel() {
     };
   }, []);
 
+  async function readApiResponse(response: Response) {
+    const contentType = response.headers.get("content-type") || "";
+    const bodyText = await response.text();
+
+    if (contentType.includes("application/json")) {
+      try {
+        return JSON.parse(bodyText) as Record<string, unknown>;
+      } catch {
+        // Fall through and treat body as plain text for a clearer error.
+      }
+    }
+
+    const message = bodyText.trim();
+    if (!response.ok) {
+      if (response.status === 413 || /request entity too large/i.test(message)) {
+        throw new Error("Upload is too large for this deployment. Try a smaller ZIP, or import JSON in smaller chunks.");
+      }
+      throw new Error(message || `Request failed with status ${response.status}.`);
+    }
+
+    return {};
+  }
+
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -130,8 +153,8 @@ export function ImportPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsed)
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Import failed.");
+      const data = await readApiResponse(response);
+      if (!response.ok) throw new Error((typeof data.error === "string" && data.error) || "Import failed.");
       setStatus(
         `Imported ${data.imported} (${data.created} new, ${data.updated} updated, ${data.skipped} skipped) using ${data.provider}.`
       );
@@ -155,8 +178,8 @@ export function ImportPanel() {
         method: "POST",
         body: formData
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Sync failed.");
+      const data = await readApiResponse(response);
+      if (!response.ok) throw new Error((typeof data.error === "string" && data.error) || "Sync failed.");
       setStatus(
         `Synced from GPT export: ${data.imported} imported (${data.created} new, ${data.updated} updated, ${data.skipped} skipped).`
       );
