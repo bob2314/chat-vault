@@ -70,6 +70,11 @@ p { margin: 0; }
 .result-group { display: grid; gap: 10px; }
 .result-group-title { color: #dbe6ff; font-size: 1rem; }
 .result-group-list { display: grid; gap: 12px; }
+.results-workspace-layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); align-items: start; }
+.workspace-panel { border: 1px solid var(--border); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.02); display: grid; gap: 12px; position: sticky; top: 92px; }
+.workspace-list { display: grid; gap: 10px; max-height: calc(100vh - 180px); overflow: auto; padding-right: 2px; }
+.workspace-item { border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: grid; gap: 8px; background: rgba(255,255,255,0.02); }
+.workspace-item h4 { margin: 0; font-size: 0.98rem; }
 .snippet { color: #dbe4ff; line-height: 1.55; }
 mark { background: rgba(143,180,255,0.25); color: white; border-radius: 4px; padding: 0 2px; }
 .empty { color: var(--muted); padding: 18px; border: 1px dashed var(--border); border-radius: 16px; }
@@ -84,4 +89,7 @@ mark { background: rgba(143,180,255,0.25); color: white; border-radius: 4px; pad
   .grid.two, .kpi-grid { grid-template-columns: 1fr; }
   .button-row { width: 100%; }
   .button-row .button { width: 100%; text-align: center; }
+  .results-workspace-layout { grid-template-columns: 1fr; }
+  .workspace-panel { position: static; }
+  .workspace-list { max-height: none; }
 }
