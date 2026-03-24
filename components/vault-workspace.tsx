@@ -467,6 +467,103 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     );
   }
 
+  function renderWorkspacePanel() {
+    return (
+      <div className="card workspace-panel-card">
+        <div className="section-title">
+          <div>
+            <h2>Workspace</h2>
+            <p className="meta">{workspaceItems.length} pinned</p>
+          </div>
+          <div className="result-actions">
+            {workspaceItems.length >= 2 ? (
+              <button className="button primary small" type="button" onClick={summarizeWorkspace} disabled={workspaceSummaryLoading}>
+                {workspaceSummaryLoading ? "Summarizing..." : "Summarize pinned"}
+              </button>
+            ) : null}
+            {workspaceItems.length > 0 ? (
+              <button className="button secondary small" type="button" onClick={() => setWorkspaceItems([])}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {workspaceSummaryError ? <p className="meta error-text">{workspaceSummaryError}</p> : null}
+        {workspaceSummary ? (
+          <div className="workspace-summary">
+            <p>{workspaceSummary.summary}</p>
+            {workspaceSummary.keyPoints.length > 0 ? (
+              <ul>
+                {workspaceSummary.keyPoints.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="meta">
+              Sources: {workspaceSummary.sources.map((source) => source.title).join(", ")}
+            </p>
+          </div>
+        ) : null}
+        {workspaceItems.length === 0 ? (
+          <div className="empty">Pin results to compare ideas here while you keep searching.</div>
+        ) : (
+          <div className="workspace-list">
+            {workspaceItems.map((item) => {
+              const preview = previewByConversation[item.conversationId];
+              const hasPreview = Boolean(preview);
+              const href = buildConversationHrefFromParts(item.conversationId, item.bestMessageId, query);
+              const chatGptUrl = resolveChatGptConversationUrl(item.conversationId);
+              return (
+                <article className="workspace-item" key={`workspace-${item.conversationId}`}>
+                  <h4>
+                    <a href={href}>{item.title}</a>
+                  </h4>
+                  <div className="result-actions">
+                    <a className="button secondary small" href={href}>
+                      Jump
+                    </a>
+                    <button
+                      className="button secondary small"
+                      type="button"
+                      onClick={() => togglePreview({ conversationId: item.conversationId, bestMessageId: item.bestMessageId })}
+                    >
+                      {hasPreview ? "Hide context" : "Show context"}
+                    </button>
+                    <button className="button secondary small" type="button" onClick={() => removeFromWorkspace(item.conversationId)}>
+                      Unpin
+                    </button>
+                    {chatGptUrl ? (
+                      <a className="button secondary small" href={chatGptUrl} target="_blank" rel="noreferrer">
+                        ChatGPT
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="tags">
+                    {item.tags.slice(0, 2).map((tagValue) => <span className="tag" key={`${item.conversationId}-wtag-${tagValue}`}>#{tagValue}</span>)}
+                    {item.topics.slice(0, 2).map((topicValue) => <span className="tag" key={`${item.conversationId}-wtopic-${topicValue}`}>topic:{topicValue}</span>)}
+                  </div>
+                  <p className="snippet" dangerouslySetInnerHTML={{ __html: item.snippet }} />
+                  {preview ? (
+                    <div className="context-preview">
+                      {preview.loading ? <p className="meta">Loading context...</p> : null}
+                      {preview.error ? <p className="meta error-text">{preview.error}</p> : null}
+                      {!preview.loading && !preview.error ? preview.messages.map((message) => (
+                        <div className="context-message" key={`${item.conversationId}-${message.id}`}>
+                          <p className="meta"><strong>{message.role}</strong> {message.createdAt ? `· ${new Date(message.createdAt).toLocaleString()}` : ""}</p>
+                          <pre className="message-content" dangerouslySetInnerHTML={{ __html: highlightText(message.content, query) }} />
+                        </div>
+                      )) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="grid two" style={{ alignItems: "start" }}>
       <div className="grid" style={{ gap: 20 }}>
@@ -573,6 +670,8 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
           </div>
         </div>
 
+        {renderWorkspacePanel()}
+
         <ImportPanel />
       </div>
 
@@ -584,132 +683,36 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
           </div>
         </div>
 
-        <div className="results-workspace-layout">
-          <div>
-            {results.results.length === 0 ? (
-              <div className="empty">No matches. Which is annoying, but useful — that query now shows up in the no-result analytics.</div>
-            ) : (
-              <div className="result-list">
-                <section className="result-group">
-                  <h3 className="result-group-title">Best matches</h3>
-                  <div className="result-group-list">
-                    {groupedResults.best.map((result, index) => renderResultCard(result, index + 1, index === 0))}
-                  </div>
-                </section>
-                {groupedResults.related.length > 0 ? (
-                  <section className="result-group">
-                    <h3 className="result-group-title">Related</h3>
-                    <div className="result-group-list">
-                      {groupedResults.related.map((result, index) => renderResultCard(result, groupedResults.best.length + index + 1))}
-                    </div>
-                  </section>
-                ) : null}
-                {groupedResults.loose.length > 0 ? (
-                  <section className="result-group">
-                    <h3 className="result-group-title">Looser matches</h3>
-                    <div className="result-group-list">
-                      {groupedResults.loose.map((result, index) =>
-                        renderResultCard(result, groupedResults.best.length + groupedResults.related.length + index + 1)
-                      )}
-                    </div>
-                  </section>
-                ) : null}
+        {results.results.length === 0 ? (
+          <div className="empty">No matches. Which is annoying, but useful — that query now shows up in the no-result analytics.</div>
+        ) : (
+          <div className="result-list">
+            <section className="result-group">
+              <h3 className="result-group-title">Best matches</h3>
+              <div className="result-group-list">
+                {groupedResults.best.map((result, index) => renderResultCard(result, index + 1, index === 0))}
               </div>
-            )}
-          </div>
-          <aside className="workspace-panel">
-            <div className="section-title">
-              <div>
-                <h3>Workspace</h3>
-                <p className="meta">{workspaceItems.length} pinned</p>
-              </div>
-              <div className="result-actions">
-                {workspaceItems.length >= 2 ? (
-                  <button className="button primary small" type="button" onClick={summarizeWorkspace} disabled={workspaceSummaryLoading}>
-                    {workspaceSummaryLoading ? "Summarizing..." : "Summarize pinned"}
-                  </button>
-                ) : null}
-                {workspaceItems.length > 0 ? (
-                  <button className="button secondary small" type="button" onClick={() => setWorkspaceItems([])}>
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {workspaceSummaryError ? <p className="meta error-text">{workspaceSummaryError}</p> : null}
-            {workspaceSummary ? (
-              <div className="workspace-summary">
-                <p>{workspaceSummary.summary}</p>
-                {workspaceSummary.keyPoints.length > 0 ? (
-                  <ul>
-                    {workspaceSummary.keyPoints.map((point) => (
-                      <li key={point}>{point}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                <p className="meta">
-                  Sources: {workspaceSummary.sources.map((source) => source.title).join(", ")}
-                </p>
-              </div>
+            </section>
+            {groupedResults.related.length > 0 ? (
+              <section className="result-group">
+                <h3 className="result-group-title">Related</h3>
+                <div className="result-group-list">
+                  {groupedResults.related.map((result, index) => renderResultCard(result, groupedResults.best.length + index + 1))}
+                </div>
+              </section>
             ) : null}
-            {workspaceItems.length === 0 ? (
-              <div className="empty">Pin results to compare ideas here while you keep searching.</div>
-            ) : (
-              <div className="workspace-list">
-                {workspaceItems.map((item) => {
-                  const preview = previewByConversation[item.conversationId];
-                  const hasPreview = Boolean(preview);
-                  const href = buildConversationHrefFromParts(item.conversationId, item.bestMessageId, query);
-                  const chatGptUrl = resolveChatGptConversationUrl(item.conversationId);
-                  return (
-                    <article className="workspace-item" key={`workspace-${item.conversationId}`}>
-                      <h4>
-                        <a href={href}>{item.title}</a>
-                      </h4>
-                      <div className="result-actions">
-                        <a className="button secondary small" href={href}>
-                          Jump
-                        </a>
-                        <button
-                          className="button secondary small"
-                          type="button"
-                          onClick={() => togglePreview({ conversationId: item.conversationId, bestMessageId: item.bestMessageId })}
-                        >
-                          {hasPreview ? "Hide context" : "Show context"}
-                        </button>
-                        <button className="button secondary small" type="button" onClick={() => removeFromWorkspace(item.conversationId)}>
-                          Unpin
-                        </button>
-                        {chatGptUrl ? (
-                          <a className="button secondary small" href={chatGptUrl} target="_blank" rel="noreferrer">
-                            ChatGPT
-                          </a>
-                        ) : null}
-                      </div>
-                      <div className="tags">
-                        {item.tags.slice(0, 2).map((tagValue) => <span className="tag" key={`${item.conversationId}-wtag-${tagValue}`}>#{tagValue}</span>)}
-                        {item.topics.slice(0, 2).map((topicValue) => <span className="tag" key={`${item.conversationId}-wtopic-${topicValue}`}>topic:{topicValue}</span>)}
-                      </div>
-                      <p className="snippet" dangerouslySetInnerHTML={{ __html: item.snippet }} />
-                      {preview ? (
-                        <div className="context-preview">
-                          {preview.loading ? <p className="meta">Loading context...</p> : null}
-                          {preview.error ? <p className="meta error-text">{preview.error}</p> : null}
-                          {!preview.loading && !preview.error ? preview.messages.map((message) => (
-                            <div className="context-message" key={`${item.conversationId}-${message.id}`}>
-                              <p className="meta"><strong>{message.role}</strong> {message.createdAt ? `· ${new Date(message.createdAt).toLocaleString()}` : ""}</p>
-                              <pre className="message-content" dangerouslySetInnerHTML={{ __html: highlightText(message.content, query) }} />
-                            </div>
-                          )) : null}
-                        </div>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </aside>
-        </div>
+            {groupedResults.loose.length > 0 ? (
+              <section className="result-group">
+                <h3 className="result-group-title">Looser matches</h3>
+                <div className="result-group-list">
+                  {groupedResults.loose.map((result, index) =>
+                    renderResultCard(result, groupedResults.best.length + groupedResults.related.length + index + 1)
+                  )}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        )}
       </div>
     </section>
   );

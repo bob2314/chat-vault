@@ -70,10 +70,8 @@ p { margin: 0; }
 .result-group { display: grid; gap: 10px; }
 .result-group-title { color: #dbe6ff; font-size: 1rem; }
 .result-group-list { display: grid; gap: 12px; }
-.results-workspace-layout { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: start; }
-.results-workspace-layout > div { min-width: 0; }
-.workspace-panel { border: 1px solid var(--border); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.02); display: grid; gap: 12px; position: static; }
-.workspace-list { display: grid; gap: 10px; max-height: calc(100vh - 180px); overflow: auto; padding-right: 2px; }
+.workspace-panel-card { display: grid; gap: 12px; }
+.workspace-list { display: grid; gap: 10px; max-height: none; overflow: visible; padding-right: 0; }
 .workspace-item { border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: grid; gap: 8px; background: rgba(255,255,255,0.02); }
 .workspace-item h4 { margin: 0; font-size: 0.98rem; }
 .workspace-summary { border: 1px solid rgba(143,180,255,0.35); border-radius: 12px; padding: 10px; background: rgba(143,180,255,0.08); display: grid; gap: 8px; }
@@ -96,11 +94,3 @@ mark { background: rgba(143,180,255,0.25); color: white; border-radius: 4px; pad
   .button-row .button { width: 100%; text-align: center; }
 }
 
-@media (min-width: 1500px) {
-  .results-workspace-layout { grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); }
-  .workspace-panel { position: sticky; top: 92px; }
-}
-
-@media (max-width: 1499px) {
-  .workspace-list { max-height: none; }
-}
