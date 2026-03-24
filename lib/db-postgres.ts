@@ -298,11 +298,35 @@ export async function searchConversationsForUserPostgres({
   const provider = getSearchProvider();
   const results = await provider.search({ userId, query, tag, topic });
   const db = getPostgresPool();
+  const [tagsResult, topicsResult] = await Promise.all([
+    db.query<{ tag: string }>(
+      `
+        SELECT DISTINCT tag
+        FROM conversation_tags
+        WHERE user_id = $1
+        ORDER BY tag ASC
+      `,
+      [userId]
+    ),
+    db.query<{ topic: string }>(
+      `
+        SELECT DISTINCT topic
+        FROM conversation_topics
+        WHERE user_id = $1
+        ORDER BY topic ASC
+      `,
+      [userId]
+    )
+  ]);
   await db.query(
     "INSERT INTO search_events (user_id, query, tag, topic, result_count, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
     [userId, query, tag ?? null, topic ?? null, results.total, new Date().toISOString()]
   );
-  return results;
+  return {
+    ...results,
+    availableTags: tagsResult.rows.map((row) => row.tag),
+    availableTopics: topicsResult.rows.map((row) => row.topic)
+  };
 }
 
 export async function recordSearchClickPostgres(

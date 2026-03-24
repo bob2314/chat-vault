@@ -21,8 +21,24 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const availableTags = useMemo(() => [...new Set(results.results.flatMap((result) => result.tags))].sort(), [results.results]);
-  const availableTopics = useMemo(() => [...new Set(results.results.flatMap((result) => result.topics))].sort(), [results.results]);
+  const availableTags = useMemo(
+    () => results.availableTags ?? [...new Set(results.results.flatMap((result) => result.tags))].sort(),
+    [results.availableTags, results.results]
+  );
+  const availableTopics = useMemo(
+    () => results.availableTopics ?? [...new Set(results.results.flatMap((result) => result.topics))].sort(),
+    [results.availableTopics, results.results]
+  );
+  const filteredTagOptions = useMemo(() => {
+    const term = tag.trim().toLowerCase();
+    if (!term) return availableTags;
+    return availableTags.filter((item) => item.toLowerCase().includes(term));
+  }, [availableTags, tag]);
+  const filteredTopicOptions = useMemo(() => {
+    const term = topic.trim().toLowerCase();
+    if (!term) return availableTopics;
+    return availableTopics.filter((item) => item.toLowerCase().includes(term));
+  }, [availableTopics, topic]);
 
   function trackResultClick(resultId: string, rankPosition: number) {
     const payload = {
@@ -130,23 +146,33 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
               aria-label="Search query"
             />
             <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <select className="select" value={tag} onChange={(event) => setTag(event.target.value)} aria-label="Filter by tag">
-                <option value="">All tags</option>
-                {availableTags.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-              <select className="select" value={topic} onChange={(event) => setTopic(event.target.value)} aria-label="Filter by topic">
-                <option value="">All topics</option>
-                {availableTopics.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              <input
+                className="input"
+                value={tag}
+                onChange={(event) => setTag(event.target.value)}
+                placeholder="All tags (type to filter)"
+                list="available-tag-options"
+                aria-label="Filter by tag"
+              />
+              <input
+                className="input"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="All topics (type to filter)"
+                list="available-topic-options"
+                aria-label="Filter by topic"
+              />
             </div>
+            <datalist id="available-tag-options">
+              {filteredTagOptions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            <datalist id="available-topic-options">
+              {filteredTopicOptions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
             <div className="button-row">
               <button className="button primary" type="submit" disabled={loading}>
                 {loading ? "Searching..." : "Search"}

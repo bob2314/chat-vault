@@ -446,9 +446,25 @@ export async function searchConversationsForUser({ userId, query, tag, topic }: 
 
   const provider = getSearchProvider();
   const results = await provider.search({ userId, query, tag, topic });
+  const availableTags = (db.prepare(`
+    SELECT DISTINCT tag
+    FROM conversation_tags
+    WHERE user_id = ?
+    ORDER BY tag ASC
+  `).all(userId) as Array<{ tag: string }>).map((row) => row.tag);
+  const availableTopics = (db.prepare(`
+    SELECT DISTINCT topic
+    FROM conversation_topics
+    WHERE user_id = ?
+    ORDER BY topic ASC
+  `).all(userId) as Array<{ topic: string }>).map((row) => row.topic);
   db.prepare(`INSERT INTO search_events (user_id, query, tag, topic, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
     .run(userId, query, tag ?? null, topic ?? null, results.total, new Date().toISOString());
-  return results;
+  return {
+    ...results,
+    availableTags,
+    availableTopics
+  };
 }
 
 export async function recordSearchClick(
