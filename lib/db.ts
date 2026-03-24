@@ -21,11 +21,20 @@ import { getSearchProvider } from "@/lib/search";
 import { hashPassword, slugify } from "@/lib/utils";
 import type { AnalyticsResponse, SavedSearch, SessionUser } from "@/types";
 
-const databasePath = process.env.DATABASE_PATH || "./data/chatvault.db";
-const absolutePath = path.isAbsolute(databasePath) ? databasePath : path.join(process.cwd(), databasePath);
-fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
 const dbProvider = (process.env.DB_PROVIDER || "sqlite").toLowerCase();
 const usePostgres = dbProvider === "postgres";
+const sqlitePath = (() => {
+  if (usePostgres) {
+    // In Postgres mode we keep SQLite strictly in-memory so serverless
+    // deployments never touch read-only filesystem paths.
+    return ":memory:";
+  }
+
+  const databasePath = process.env.DATABASE_PATH || "./data/chatvault.db";
+  const absolutePath = path.isAbsolute(databasePath) ? databasePath : path.join(process.cwd(), databasePath);
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  return absolutePath;
+})();
 
 export async function initializeDatabase() {
   if (usePostgres) {
@@ -48,7 +57,7 @@ export async function ensureUserRecord(user: SessionUser) {
   `).run(user.id, user.email, user.name, "__clerk__", new Date().toISOString());
 }
 
-export const db = new Database(absolutePath);
+export const db = new Database(sqlitePath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
