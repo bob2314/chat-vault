@@ -16,12 +16,10 @@ export default async function HomePage() {
     <main className="page-shell">
       <div className="container grid" style={{ gap: 22 }}>
         <section className="hero">
-          <div className="badge-row">
-            <span className="badge">Next.js</span>
-            <span className="badge">SQLite / Typesense provider</span>
+          <div className="hero-title-row">
+            <h1>Chat Vault</h1>
             <span className="badge">Per-user vault</span>
           </div>
-          <h1>Chat Vault</h1>
           <p>
             A practical POC for importing AI chat history, indexing it sanely, saving useful searches, and surfacing where retrieval is failing.
             This pass adds per-user isolation, provider abstraction for SQLite vs Typesense, rough ChatGPT import adapters, and a cleaner dashboard.
