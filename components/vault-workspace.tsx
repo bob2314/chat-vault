@@ -31,6 +31,12 @@ type WorkspaceItem = {
   bestMessageId: string | null;
 };
 
+type WorkspaceSummary = {
+  summary: string;
+  keyPoints: string[];
+  sources: Array<{ id: string; title: string }>;
+};
+
 function tokenize(input: string) {
   return input
     .toLowerCase()
@@ -114,6 +120,9 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
   const [saving, setSaving] = useState(false);
   const [previewByConversation, setPreviewByConversation] = useState<Record<string, PreviewState>>({});
   const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
+  const [workspaceSummary, setWorkspaceSummary] = useState<WorkspaceSummary | null>(null);
+  const [workspaceSummaryLoading, setWorkspaceSummaryLoading] = useState(false);
+  const [workspaceSummaryError, setWorkspaceSummaryError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -155,6 +164,36 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     return availableTopics.filter((item) => item.toLowerCase().includes(term));
   }, [availableTopics, topic]);
   const groupedResults = useMemo(() => groupResults(results.results), [results.results]);
+  const rankByConversationId = useMemo(
+    () =>
+      Object.fromEntries(results.results.map((result, index) => [result.id, index + 1])) as Record<string, number>,
+    [results.results]
+  );
+  const relatedByConversationId = useMemo(() => {
+    const byId = new Map(results.results.map((result) => [result.id, result]));
+    const related = new Map<string, string[]>();
+    for (const current of results.results) {
+      const currentTagSet = new Set(current.tags);
+      const currentTopicSet = new Set(current.topics);
+      const currentTitleTerms = new Set(tokenize(current.title));
+      const scored = results.results
+        .filter((candidate) => candidate.id !== current.id)
+        .map((candidate) => {
+          const sharedTags = candidate.tags.filter((tagValue) => currentTagSet.has(tagValue)).length;
+          const sharedTopics = candidate.topics.filter((topicValue) => currentTopicSet.has(topicValue)).length;
+          const sharedTitleTerms = tokenize(candidate.title).filter((term) => currentTitleTerms.has(term)).length;
+          const score = sharedTags * 3 + sharedTopics * 2 + sharedTitleTerms;
+          return { id: candidate.id, score };
+        })
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2)
+        .map((item) => item.id)
+        .filter((id) => byId.has(id));
+      related.set(current.id, scored);
+    }
+    return related;
+  }, [results.results]);
 
   function trackResultClick(resultId: string, rankPosition: number) {
     const payload = {
@@ -199,6 +238,28 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
 
   function removeFromWorkspace(conversationId: string) {
     setWorkspaceItems((current) => current.filter((item) => item.conversationId !== conversationId));
+  }
+
+  async function summarizeWorkspace() {
+    if (workspaceItems.length < 2) return;
+    setWorkspaceSummaryLoading(true);
+    setWorkspaceSummaryError(null);
+    try {
+      const response = await fetch("/api/workspace/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationIds: workspaceItems.map((item) => item.conversationId) })
+      });
+      const data = (await response.json()) as WorkspaceSummary | { error?: string };
+      if (!response.ok || !("summary" in data)) {
+        throw new Error(("error" in data && typeof data.error === "string" && data.error) || "Could not summarize workspace.");
+      }
+      setWorkspaceSummary(data);
+    } catch (summaryError) {
+      setWorkspaceSummaryError(summaryError instanceof Error ? summaryError.message : "Could not summarize workspace.");
+    } finally {
+      setWorkspaceSummaryLoading(false);
+    }
   }
 
   async function runSearch(nextQuery = query, nextTag = tag, nextTopic = topic) {
@@ -311,6 +372,9 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     const preview = previewByConversation[result.id];
     const hasPreview = Boolean(preview);
     const isPinned = workspaceItems.some((item) => item.conversationId === result.id);
+    const relatedItems = (relatedByConversationId.get(result.id) ?? [])
+      .map((conversationId) => results.results.find((candidate) => candidate.id === conversationId))
+      .filter(Boolean) as ConversationSearchResult[];
 
     return (
       <article className={`result-card ${isTopCard ? "result-card-primary" : ""}`} key={result.id}>
@@ -384,6 +448,21 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
           {result.topics.map((topicValue) => <span className="tag" key={`${result.id}-${topicValue}`}>topic:{topicValue}</span>)}
         </div>
         <p className="snippet" dangerouslySetInnerHTML={{ __html: result.snippet }} />
+        {relatedItems.length > 0 ? (
+          <div className="related-list">
+            <p className="meta"><strong>Related:</strong></p>
+            {relatedItems.map((item) => (
+              <a
+                key={`${result.id}-related-${item.id}`}
+                href={buildConversationHref(item, query)}
+                className="related-link"
+                onClick={() => trackResultClick(item.id, rankByConversationId[item.id] ?? rankPosition)}
+              >
+                {item.title}
+              </a>
+            ))}
+          </div>
+        ) : null}
       </article>
     );
   }
@@ -544,12 +623,35 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
                 <h3>Workspace</h3>
                 <p className="meta">{workspaceItems.length} pinned</p>
               </div>
-              {workspaceItems.length > 0 ? (
-                <button className="button secondary small" type="button" onClick={() => setWorkspaceItems([])}>
-                  Clear
-                </button>
-              ) : null}
+              <div className="result-actions">
+                {workspaceItems.length >= 2 ? (
+                  <button className="button primary small" type="button" onClick={summarizeWorkspace} disabled={workspaceSummaryLoading}>
+                    {workspaceSummaryLoading ? "Summarizing..." : "Summarize pinned"}
+                  </button>
+                ) : null}
+                {workspaceItems.length > 0 ? (
+                  <button className="button secondary small" type="button" onClick={() => setWorkspaceItems([])}>
+                    Clear
+                  </button>
+                ) : null}
+              </div>
             </div>
+            {workspaceSummaryError ? <p className="meta error-text">{workspaceSummaryError}</p> : null}
+            {workspaceSummary ? (
+              <div className="workspace-summary">
+                <p>{workspaceSummary.summary}</p>
+                {workspaceSummary.keyPoints.length > 0 ? (
+                  <ul>
+                    {workspaceSummary.keyPoints.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="meta">
+                  Sources: {workspaceSummary.sources.map((source) => source.title).join(", ")}
+                </p>
+              </div>
+            ) : null}
             {workspaceItems.length === 0 ? (
               <div className="empty">Pin results to compare ideas here while you keep searching.</div>
             ) : (

@@ -75,6 +75,10 @@ p { margin: 0; }
 .workspace-list { display: grid; gap: 10px; max-height: calc(100vh - 180px); overflow: auto; padding-right: 2px; }
 .workspace-item { border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: grid; gap: 8px; background: rgba(255,255,255,0.02); }
 .workspace-item h4 { margin: 0; font-size: 0.98rem; }
+.workspace-summary { border: 1px solid rgba(143,180,255,0.35); border-radius: 12px; padding: 10px; background: rgba(143,180,255,0.08); display: grid; gap: 8px; }
+.workspace-summary ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.related-list { display: grid; gap: 6px; margin-top: 6px; }
+.related-link { color: #b8ccff; font-size: 0.94rem; text-decoration: underline; text-decoration-color: rgba(184,204,255,0.45); }
 .snippet { color: #dbe4ff; line-height: 1.55; }
 mark { background: rgba(143,180,255,0.25); color: white; border-radius: 4px; padding: 0 2px; }
 .empty { color: var(--muted); padding: 18px; border: 1px dashed var(--border); border-radius: 16px; }
