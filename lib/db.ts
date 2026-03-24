@@ -10,6 +10,7 @@ import {
   getConversationPostgres,
   getImportStatusForUserPostgres,
   recordCaptureEventPostgres,
+  recordSearchClickPostgres,
   importConversationsForUserPostgres,
   listSavedSearchesPostgres,
   saveSearchPostgres,
@@ -136,6 +137,18 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS search_click_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    query TEXT,
+    tag TEXT,
+    topic TEXT,
+    rank_position INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS import_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -208,6 +221,10 @@ const insertCaptureEventStmt = db.prepare(`
     conversation_external_id, content_hash, status, raw_payload, normalized_payload, result_summary
   )
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const insertSearchClickEventStmt = db.prepare(`
+  INSERT INTO search_click_events (user_id, conversation_id, query, tag, topic, rank_position, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
 export async function createUser({ email, name, password }: { email: string; name: string; password: string }) {
@@ -434,6 +451,25 @@ export async function searchConversationsForUser({ userId, query, tag, topic }: 
   return results;
 }
 
+export async function recordSearchClick(
+  userId: string,
+  input: { conversationId: string; query?: string | null; tag?: string | null; topic?: string | null; rankPosition?: number | null }
+) {
+  if (usePostgres) {
+    return recordSearchClickPostgres(userId, input);
+  }
+
+  insertSearchClickEventStmt.run(
+    userId,
+    input.conversationId,
+    input.query ?? null,
+    input.tag ?? null,
+    input.topic ?? null,
+    typeof input.rankPosition === "number" ? input.rankPosition : null,
+    new Date().toISOString()
+  );
+}
+
 export async function saveSearch(userId: string, input: { name: string; query: string; tag?: string | null; topic?: string | null }) {
   if (usePostgres) {
     return saveSearchPostgres(userId, input);
@@ -485,11 +521,11 @@ export async function getConversation(userId: string, id: string) {
   if (!conversation) return null;
 
   const messages = db.prepare(`
-    SELECT role, content, created_at
+    SELECT id, role, content, created_at
     FROM messages
     WHERE user_id = ? AND conversation_id = ?
     ORDER BY id ASC
-  `).all(userId, id) as Array<{ role: string; content: string; created_at: string | null }>;
+  `).all(userId, id) as Array<{ id: number; role: string; content: string; created_at: string | null }>;
 
   const tags = db.prepare(`SELECT tag FROM conversation_tags WHERE user_id = ? AND conversation_id = ? ORDER BY tag ASC`).all(userId, id) as Array<{ tag: string }>;
   const topics = db.prepare(`SELECT topic FROM conversation_topics WHERE user_id = ? AND conversation_id = ? ORDER BY topic ASC`).all(userId, id) as Array<{ topic: string }>;
@@ -503,6 +539,7 @@ export async function getConversation(userId: string, id: string) {
     tags: tags.map((item) => item.tag),
     topics: topics.map((item) => item.topic),
     messages: messages.map((message) => ({
+      id: `${message.id}`,
       role: message.role,
       content: message.content,
       createdAt: message.created_at

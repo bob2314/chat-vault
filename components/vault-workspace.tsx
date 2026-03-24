@@ -24,6 +24,30 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
   const availableTags = useMemo(() => [...new Set(results.results.flatMap((result) => result.tags))].sort(), [results.results]);
   const availableTopics = useMemo(() => [...new Set(results.results.flatMap((result) => result.topics))].sort(), [results.results]);
 
+  function trackResultClick(resultId: string, rankPosition: number) {
+    const payload = {
+      conversationId: resultId,
+      query: query || null,
+      tag: tag || null,
+      topic: topic || null,
+      rankPosition
+    };
+    const body = JSON.stringify(payload);
+
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([body], { type: "application/json" });
+      navigator.sendBeacon("/api/search/click", blob);
+      return;
+    }
+
+    void fetch("/api/search/click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true
+    });
+  }
+
   async function runSearch(nextQuery = query, nextTag = tag, nextTopic = topic) {
     setLoading(true);
     setError(null);
@@ -102,7 +126,7 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
               className="input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Try: philadelphia lease, 4runner insurance, cursor api"
+              placeholder="Try: philadelphia lease, 4runner insurance, search engine app"
               aria-label="Search query"
             />
             <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
@@ -189,21 +213,57 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
           <div className="empty">No matches. Which is annoying, but useful — that query now shows up in the no-result analytics.</div>
         ) : (
           <div className="result-list">
-            {results.results.map((result) => (
-              <a className="result-card" key={result.id} href={`/conversation/${result.id}`}>
+            {results.results.map((result, index) => {
+              const linkParams = new URLSearchParams();
+              if (result.bestMessageId) {
+                linkParams.set("m", result.bestMessageId);
+              }
+              if (query.trim()) {
+                linkParams.set("q", query.trim());
+              }
+              const href = linkParams.size > 0
+                ? `/conversation/${result.id}?${linkParams.toString()}`
+                : `/conversation/${result.id}`;
+              const hrefWithAnchor = result.bestMessageId ? `${href}#message-${result.bestMessageId}` : href;
+              return (
+              <a
+                className="result-card"
+                key={result.id}
+                href={hrefWithAnchor}
+                onClick={() => trackResultClick(result.id, index + 1)}
+              >
                 <div className="section-title" style={{ alignItems: "flex-start" }}>
                   <div>
                     <h3>{result.title}</h3>
                     <p className="meta">{new Date(result.updatedAt).toLocaleString()} · {result.messageCount} messages</p>
                   </div>
                 </div>
+                {result.matchSignals.length > 0 ? (
+                  <div className="tags" style={{ marginTop: 8 }}>
+                    {result.matchSignals.slice(0, 3).map((signal) => (
+                      <span className="tag signal-tag" key={`${result.id}-signal-${signal}`}>
+                        {signal}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {result.matchFields.length > 0 ? (
+                  <div className="tags" style={{ marginTop: 8 }}>
+                    {result.matchFields.map((field) => (
+                      <span className="tag match-badge" key={`${result.id}-field-${field}`}>
+                        {field} match
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="tags" style={{ marginTop: 10 }}>
                   {result.tags.map((tagValue) => <span className="tag" key={`${result.id}-${tagValue}`}>#{tagValue}</span>)}
                   {result.topics.map((topicValue) => <span className="tag" key={`${result.id}-${topicValue}`}>topic:{topicValue}</span>)}
                 </div>
                 <p className="snippet" dangerouslySetInnerHTML={{ __html: result.snippet }} />
               </a>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

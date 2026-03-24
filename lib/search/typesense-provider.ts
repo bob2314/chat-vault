@@ -1,6 +1,7 @@
 import Typesense, { Client } from "typesense";
 import { PostgresSearchProvider } from "@/lib/search/postgres-provider";
 import type { SearchProvider } from "@/lib/search/provider";
+import { scoreConversation } from "@/lib/search/ranking";
 import type { SearchParams, SearchResponse } from "@/types";
 import { SqliteSearchProvider } from "@/lib/search/sqlite-provider";
 
@@ -112,15 +113,29 @@ export class TypesenseSearchProvider implements SearchProvider {
         topic: params.topic ?? null,
         results: (response.hits || []).map((hit) => {
           const doc = hit.document as Record<string, any>;
+          const updatedAt = new Date(doc.updatedAt).toISOString();
+          const ranked = scoreConversation({
+            query: params.query,
+            title: String(doc.title || ""),
+            fullText: String(doc.fullText || ""),
+            tags: Array.isArray(doc.tags) ? doc.tags : [],
+            topics: Array.isArray(doc.topics) ? doc.topics : [],
+            updatedAt,
+            activeTag: params.tag,
+            activeTopic: params.topic
+          });
           return {
             id: doc.conversationId,
             title: doc.title,
             snippet: String(hit.highlights?.[0]?.snippet || doc.fullText || "").slice(0, 260),
             tags: doc.tags || [],
             topics: doc.topics || [],
+            bestMessageId: null,
+            matchFields: ranked.matchFields,
             createdAt: new Date(doc.createdAt).toISOString(),
-            updatedAt: new Date(doc.updatedAt).toISOString(),
-            score: Number(hit.text_match || 0),
+            updatedAt,
+            score: ranked.score + Number(hit.text_match || 0),
+            matchSignals: ranked.signals,
             messageCount: doc.messageCount || 0
           };
         })

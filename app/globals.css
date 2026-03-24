@@ -30,11 +30,17 @@ p { margin: 0; }
 .hero h1 { font-size: clamp(2rem, 4vw, 3.3rem); margin: 0; }
 .hero p { color: var(--muted); max-width: 850px; line-height: 1.6; }
 .card, .message-card { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)); border: 1px solid var(--border); border-radius: 24px; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.18); }
+.message-card-target, .message-card:target {
+  border-color: rgba(143,180,255,0.75);
+  box-shadow: 0 0 0 2px rgba(143,180,255,0.25), 0 20px 60px rgba(0,0,0,0.18);
+}
 .narrow-card { max-width: 560px; }
 .section-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .meta { color: var(--muted); font-size: 0.92rem; }
 .badge-row, .tags, .button-row, .saved-grid { display: flex; flex-wrap: wrap; gap: 10px; }
 .badge, .tag { border: 1px solid var(--border); background: rgba(255,255,255,0.04); border-radius: 999px; padding: 6px 10px; color: var(--muted); }
+.signal-tag { background: rgba(143,180,255,0.14); border-color: rgba(143,180,255,0.35); color: #dbe6ff; text-transform: lowercase; }
+.match-badge { background: rgba(120, 224, 170, 0.13); border-color: rgba(120, 224, 170, 0.35); color: #c7ffe2; text-transform: lowercase; }
 .input, .select, .textarea { width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--text); border-radius: 16px; padding: 12px 14px; }
 .input::placeholder, .textarea::placeholder { color: #7f8ab3; }
 .textarea { resize: vertical; min-height: 240px; }

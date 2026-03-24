@@ -1,4 +1,5 @@
 import { normalizePayload } from "@/lib/importer";
+import { embedConversationForUser } from "@/lib/jobs/embed-conversation";
 import { getPostgresPool, ensurePostgresSchema } from "@/lib/postgres";
 import { getSearchProvider } from "@/lib/search";
 import { hashPassword, slugify } from "@/lib/utils";
@@ -73,6 +74,7 @@ export async function importConversationsForUserPostgres(
     return Date.parse(candidate) > Date.parse(max) ? candidate : max;
   }, null);
   const conversationsToIndex: Array<(typeof normalized.conversations)[number]> = [];
+  const conversationsForEmbedding: string[] = [];
   let created = 0;
   let updated = 0;
   let skipped = 0;
@@ -150,6 +152,7 @@ export async function importConversationsForUserPostgres(
       }
 
       conversationsToIndex.push(conversation);
+      conversationsForEmbedding.push(conversation.id!);
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -172,6 +175,14 @@ export async function importConversationsForUserPostgres(
       updatedAt: conversation.updatedAt!,
       messageCount: conversation.messages.length
     });
+  }
+
+  for (const conversationId of conversationsForEmbedding) {
+    try {
+      await embedConversationForUser(userId, conversationId);
+    } catch {
+      // Embedding prep should never block successful imports.
+    }
   }
 
   await db.query(
@@ -294,6 +305,29 @@ export async function searchConversationsForUserPostgres({
   return results;
 }
 
+export async function recordSearchClickPostgres(
+  userId: string,
+  input: { conversationId: string; query?: string | null; tag?: string | null; topic?: string | null; rankPosition?: number | null }
+) {
+  await ensurePostgresSchema();
+  const db = getPostgresPool();
+  await db.query(
+    `
+      INSERT INTO search_click_events (user_id, conversation_id, query, tag, topic, rank_position, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `,
+    [
+      userId,
+      input.conversationId,
+      input.query ?? null,
+      input.tag ?? null,
+      input.topic ?? null,
+      typeof input.rankPosition === "number" ? input.rankPosition : null,
+      new Date().toISOString()
+    ]
+  );
+}
+
 export async function saveSearchPostgres(userId: string, input: SaveSearchInput) {
   await ensurePostgresSchema();
   const db = getPostgresPool();
@@ -397,9 +431,9 @@ export async function getConversationPostgres(userId: string, id: string) {
   const conversation = conversationResult.rows[0];
   if (!conversation) return null;
 
-  const messagesResult = await db.query<{ role: string; content: string; created_at: Date | null }>(
+  const messagesResult = await db.query<{ id: string; role: string; content: string; created_at: Date | null }>(
     `
-      SELECT role, content, created_at
+      SELECT id, role, content, created_at
       FROM messages
       WHERE user_id = $1 AND conversation_id = $2
       ORDER BY id ASC
@@ -425,6 +459,7 @@ export async function getConversationPostgres(userId: string, id: string) {
     tags: tagsResult.rows.map((item) => item.tag),
     topics: topicsResult.rows.map((item) => item.topic),
     messages: messagesResult.rows.map((message) => ({
+      id: `${message.id}`,
       role: message.role,
       content: message.content,
       createdAt: message.created_at ? new Date(message.created_at).toISOString() : null

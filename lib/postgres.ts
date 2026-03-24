@@ -25,6 +25,15 @@ export async function ensurePostgresSchema() {
 
   schemaReady = (async () => {
     const db = getPostgresPool();
+    let embeddingType = "double precision[]";
+    try {
+      await db.query("CREATE EXTENSION IF NOT EXISTS vector;");
+      embeddingType = "vector(1536)";
+    } catch {
+      // Some hosted Postgres setups disable extension creation in app role.
+      // We still create scaffolding tables with array storage as fallback.
+    }
+
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -91,6 +100,17 @@ export async function ensurePostgresSchema() {
         created_at TIMESTAMPTZ NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS search_click_events (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL,
+        query TEXT,
+        tag TEXT,
+        topic TEXT,
+        rank_position INTEGER,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS import_events (
         id BIGSERIAL PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -122,12 +142,43 @@ export async function ensurePostgresSchema() {
         result_summary JSONB
       );
 
+      CREATE TABLE IF NOT EXISTS conversation_embeddings (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL,
+        summary_text TEXT NOT NULL,
+        embedding ${embeddingType},
+        status TEXT NOT NULL DEFAULT 'pending',
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (user_id, conversation_id),
+        FOREIGN KEY (user_id, conversation_id) REFERENCES conversations(user_id, id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS message_chunks (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        start_message_id BIGINT,
+        end_message_id BIGINT,
+        chunk_text TEXT NOT NULL,
+        embedding ${embeddingType},
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        FOREIGN KEY (user_id, conversation_id) REFERENCES conversations(user_id, id) ON DELETE CASCADE,
+        UNIQUE (user_id, conversation_id, chunk_index)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_user_conversation ON messages(user_id, conversation_id, id);
       CREATE INDEX IF NOT EXISTS idx_search_events_user_created ON search_events(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_search_click_events_user_created ON search_click_events(user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_import_events_user_created ON import_events(user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_capture_events_user_created ON capture_events(user_id, processed_at DESC);
       CREATE INDEX IF NOT EXISTS idx_capture_events_user_hash ON capture_events(user_id, content_hash);
+      CREATE INDEX IF NOT EXISTS idx_conversation_embeddings_status ON conversation_embeddings(user_id, status, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_message_chunks_lookup ON message_chunks(user_id, conversation_id, chunk_index);
+      CREATE INDEX IF NOT EXISTS idx_message_chunks_status ON message_chunks(user_id, status, updated_at DESC);
     `);
   })();
 

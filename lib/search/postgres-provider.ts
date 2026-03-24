@@ -1,5 +1,6 @@
 import { ensurePostgresSchema, getPostgresPool } from "@/lib/postgres";
 import type { SearchProvider } from "@/lib/search/provider";
+import { scoreConversation } from "@/lib/search/ranking";
 import { clampSnippet, tokenize, uniqueStrings } from "@/lib/utils";
 import type { SearchParams, SearchResponse } from "@/types";
 
@@ -22,16 +23,22 @@ function highlightSnippet(snippet: string, query: string) {
   }, snippet);
 }
 
-function scoreText(query: string, title: string, text: string) {
+function getBestMessageMatch(messages: Array<{ id: string | number; content: string }>, query: string) {
   const terms = uniqueStrings(tokenize(query));
-  if (terms.length === 0) return 0;
-  const loweredTitle = title.toLowerCase();
-  const loweredText = text.toLowerCase();
-  return terms.reduce((score, term) => {
-    const inTitle = loweredTitle.includes(term) ? 2 : 0;
-    const inText = loweredText.includes(term) ? 1 : 0;
-    return score + inTitle + inText;
-  }, 0);
+  if (terms.length === 0) return null;
+
+  let best: { id: string | number; content: string; score: number } | null = null;
+  for (const message of messages) {
+    const lowered = message.content.toLowerCase();
+    const termHits = terms.reduce((count, term) => count + (lowered.includes(term) ? 1 : 0), 0);
+    if (termHits === 0) continue;
+    const phraseHit = query.trim().length > 1 && lowered.includes(query.trim().toLowerCase()) ? 1 : 0;
+    const score = phraseHit * 10 + termHits;
+    if (!best || score > best.score) {
+      best = { id: message.id, content: message.content, score };
+    }
+  }
+  return best;
 }
 
 export class PostgresSearchProvider implements SearchProvider {
@@ -89,7 +96,7 @@ export class PostgresSearchProvider implements SearchProvider {
         FROM conversations c
         WHERE ${where.join(" AND ")}
         ORDER BY c.updated_at DESC
-        LIMIT 50
+        LIMIT 150
       `,
       params
     );
@@ -104,26 +111,56 @@ export class PostgresSearchProvider implements SearchProvider {
         "SELECT topic FROM conversation_topics WHERE user_id = $1 AND conversation_id = $2 ORDER BY topic ASC",
         [userId, row.id]
       );
+      const messagesResult = await db.query<{ id: string; content: string }>(
+        "SELECT id, content FROM messages WHERE user_id = $1 AND conversation_id = $2 ORDER BY id ASC",
+        [userId, row.id]
+      );
+      const bestMessage = getBestMessageMatch(messagesResult.rows, query);
+      const snippetSource = bestMessage?.content ?? row.full_text;
 
-      results.push({
+      const mapped = {
         id: row.id,
         title: row.title,
-        snippet: highlightSnippet(buildSnippet(row.full_text, query), query),
+        snippet: highlightSnippet(buildSnippet(snippetSource, query), query),
         tags: tagsResult.rows.map((item) => item.tag),
         topics: topicsResult.rows.map((item) => item.topic),
+        bestMessageId: bestMessage ? `${bestMessage.id}` : null,
         createdAt: new Date(row.created_at).toISOString(),
         updatedAt: new Date(row.updated_at).toISOString(),
         messageCount: row.message_count,
-        score: scoreText(query, row.title, row.full_text)
+        score: 0,
+        matchSignals: [] as string[],
+        matchFields: [] as Array<"title" | "message" | "tag" | "topic">
+      };
+      const ranked = scoreConversation({
+        query,
+        title: mapped.title,
+        fullText: row.full_text,
+        tags: mapped.tags,
+        topics: mapped.topics,
+        updatedAt: mapped.updatedAt,
+        activeTag: tag,
+        activeTopic: topic
       });
+      mapped.score = ranked.score;
+      mapped.matchSignals = ranked.signals;
+      mapped.matchFields = bestMessage
+        ? Array.from(new Set<"title" | "message" | "tag" | "topic">([...ranked.matchFields, "message"]))
+        : ranked.matchFields;
+      results.push(mapped);
     }
+
+    results.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+    });
 
     return {
       total: results.length,
       query,
       tag: tag ?? null,
       topic: topic ?? null,
-      results
+      results: results.slice(0, 50)
     };
   }
 }
