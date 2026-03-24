@@ -32,8 +32,14 @@ const sqlitePath = (() => {
 
   const databasePath = process.env.DATABASE_PATH || "./data/chatvault.db";
   const absolutePath = path.isAbsolute(databasePath) ? databasePath : path.join(process.cwd(), databasePath);
-  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-  return absolutePath;
+  try {
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    return absolutePath;
+  } catch {
+    // Serverless filesystems (e.g. Vercel /var/task) are read-only.
+    // Fall back to in-memory SQLite instead of crashing the request.
+    return ":memory:";
+  }
 })();
 
 export async function initializeDatabase() {
