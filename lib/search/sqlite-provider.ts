@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { scoreConversation } from "@/lib/search/ranking";
 import { clampSnippet, tokenize, uniqueStrings } from "@/lib/utils";
 import type { SearchParams, SearchResponse } from "@/types";
 import type { SearchProvider } from "@/lib/search/provider";
@@ -20,6 +21,24 @@ function highlightSnippet(snippet: string, query: string) {
     const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
     return output.replace(regex, "<mark>$1</mark>");
   }, snippet);
+}
+
+function getBestMessageMatch(messages: Array<{ id: number; content: string }>, query: string) {
+  const terms = uniqueStrings(tokenize(query));
+  if (terms.length === 0) return null;
+
+  let best: { id: number; content: string; score: number } | null = null;
+  for (const message of messages) {
+    const lowered = message.content.toLowerCase();
+    const termHits = terms.reduce((count, term) => count + (lowered.includes(term) ? 1 : 0), 0);
+    if (termHits === 0) continue;
+    const phraseHit = query.trim().length > 1 && lowered.includes(query.trim().toLowerCase()) ? 1 : 0;
+    const score = phraseHit * 10 + termHits;
+    if (!best || score > best.score) {
+      best = { id: message.id, content: message.content, score };
+    }
+  }
+  return best;
 }
 
 export class SqliteSearchProvider implements SearchProvider {
@@ -91,7 +110,7 @@ export class SqliteSearchProvider implements SearchProvider {
       params.push(topic);
     }
 
-    sql += ` WHERE ${where.join(" AND ")} ORDER BY ${hasQuery ? "score ASC," : ""} c.updated_at DESC LIMIT 50`;
+    sql += ` WHERE ${where.join(" AND ")} ORDER BY ${hasQuery ? "score ASC," : ""} c.updated_at DESC LIMIT 150`;
 
     const rows = db.prepare(sql).all(...params) as Array<{
       id: string;
@@ -105,23 +124,57 @@ export class SqliteSearchProvider implements SearchProvider {
 
     const tagLookup = db.prepare("SELECT tag FROM conversation_tags WHERE user_id = ? AND conversation_id = ? ORDER BY tag ASC");
     const topicLookup = db.prepare("SELECT topic FROM conversation_topics WHERE user_id = ? AND conversation_id = ? ORDER BY topic ASC");
+    const messageLookup = db.prepare("SELECT id, content FROM messages WHERE user_id = ? AND conversation_id = ? ORDER BY id ASC");
+
+    const rankedResults = rows.map((row) => {
+      const tags = (tagLookup.all(userId, row.id) as Array<{ tag: string }>).map((item) => item.tag);
+      const topics = (topicLookup.all(userId, row.id) as Array<{ topic: string }>).map((item) => item.topic);
+      const messages = messageLookup.all(userId, row.id) as Array<{ id: number; content: string }>;
+      const bestMessage = getBestMessageMatch(messages, query);
+      const updatedAt = row.updated_at;
+      const ranked = scoreConversation({
+        query,
+        title: row.title,
+        fullText: row.full_text,
+        tags,
+        topics,
+        updatedAt,
+        activeTag: tag,
+        activeTopic: topic
+      });
+      const snippetSource = bestMessage?.content ?? row.full_text;
+      const matchFields = new Set(ranked.matchFields);
+      if (bestMessage) {
+        matchFields.add("message");
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        snippet: highlightSnippet(buildSnippet(snippetSource, query), query),
+        tags,
+        topics,
+        bestMessageId: bestMessage ? `${bestMessage.id}` : null,
+        matchFields: Array.from(matchFields),
+        createdAt: row.created_at,
+        updatedAt,
+        messageCount: row.message_count,
+        score: ranked.score,
+        matchSignals: ranked.signals
+      };
+    });
+
+    rankedResults.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+    });
 
     return {
-      total: rows.length,
+      total: rankedResults.length,
       query,
       tag: tag ?? null,
       topic: topic ?? null,
-      results: rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        snippet: highlightSnippet(buildSnippet(row.full_text, query), query),
-        tags: (tagLookup.all(userId, row.id) as Array<{ tag: string }>).map((item) => item.tag),
-        topics: (topicLookup.all(userId, row.id) as Array<{ topic: string }>).map((item) => item.topic),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        messageCount: row.message_count,
-        score: Number.isFinite(row.score) ? row.score : 0
-      }))
+      results: rankedResults.slice(0, 50)
     };
   }
 }

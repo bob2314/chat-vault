@@ -33,6 +33,9 @@ export type ConversationSearchResult = {
   snippet: string;
   tags: string[];
   topics: string[];
+  matchFields: Array<"title" | "message" | "tag" | "topic">;
+  matchSignals: string[];
+  bestMessageId: string | null;
   createdAt: string;
   updatedAt: string;
   score: number;
@@ -44,6 +47,8 @@ export type SearchResponse = {
   query: string;
   tag: string | null;
   topic: string | null;
+  availableTags?: string[];
+  availableTopics?: string[];
   results: ConversationSearchResult[];
 };
 
