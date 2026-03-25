@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
+import { resolveChatGptConversationUrl } from "@/lib/chatgpt-links";
 import { ensureUserRecord, getConversation } from "@/lib/db";
 import { tokenize, uniqueStrings } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ export default async function ConversationPage({
   if (!conversation) notFound();
   const targetMessageId = searchParams?.m?.trim() || "";
   const highlightQuery = searchParams?.q?.trim() || "";
+  const chatGptUrl = resolveChatGptConversationUrl(conversation.id);
 
   return (
     <main className="page-shell">
@@ -48,6 +50,11 @@ export default async function ConversationPage({
               <h1>{conversation.title}</h1>
               <p className="meta">{new Date(conversation.updatedAt).toLocaleString()} · {conversation.messageCount} messages</p>
             </div>
+            {chatGptUrl ? (
+              <a className="button secondary" href={chatGptUrl} target="_blank" rel="noreferrer">
+                Open in ChatGPT
+              </a>
+            ) : null}
           </div>
           <div className="tags">
             {conversation.tags.map((tag) => <span className="tag" key={tag}>#{tag}</span>)}

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ImportPanel } from "@/components/import-panel";
+import { resolveChatGptConversationUrl } from "@/lib/chatgpt-links";
 import type { ConversationSearchResult, SavedSearch, SearchResponse } from "@/types";
 
 type Props = {
@@ -63,12 +63,6 @@ function highlightText(content: string, query: string) {
   }, escapeHtml(content));
 }
 
-function resolveChatGptConversationUrl(conversationId: string) {
-  const prefixed = conversationId.match(/^chatgpt-([a-z0-9-]+)$/i);
-  if (prefixed?.[1]) return `https://chatgpt.com/c/${prefixed[1]}`;
-  return null;
-}
-
 function buildConversationHref(result: ConversationSearchResult, query: string) {
   return buildConversationHrefFromParts(result.id, result.bestMessageId, query);
 }
@@ -116,7 +110,6 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
   const [results, setResults] = useState<SearchResponse>(initialData);
   const [error, setError] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState(initialSavedSearches);
-  const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewByConversation, setPreviewByConversation] = useState<Record<string, PreviewState>>({});
   const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
@@ -144,6 +137,27 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
       // ignore local storage errors
     }
   }, [workspaceItems]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "/") return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      const searchInput = document.getElementById("vault-search-input") as HTMLInputElement | null;
+      if (!searchInput) return;
+      searchInput.focus();
+      searchInput.select();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const availableTags = useMemo(
     () => results.availableTags ?? [...new Set(results.results.flatMap((result) => result.tags))].sort(),
@@ -288,7 +302,7 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     setSaving(true);
     setError(null);
     const payload = {
-      name: saveName.trim() || `${query || "All chats"}${tag ? ` / #${tag}` : ""}${topic ? ` / ${topic}` : ""}`,
+      name: `${query || "All chats"}${tag ? ` / #${tag}` : ""}${topic ? ` / ${topic}` : ""}`,
       query,
       tag: tag || null,
       topic: topic || null
@@ -308,7 +322,6 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
 
       const saved = (await response.json()) as SavedSearch;
       setSavedSearches([saved, ...savedSearches]);
-      setSaveName("");
     } catch {
       setError("Could not save search.");
     } finally {
@@ -380,7 +393,7 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
       <article className={`result-card ${isTopCard ? "result-card-primary" : ""}`} key={result.id}>
         <div className="section-title" style={{ alignItems: "flex-start" }}>
           <div>
-            <h3>
+            <h3 className={isTopCard ? "result-title-top" : undefined}>
               <a href={href} onClick={() => trackResultClick(result.id, rankPosition)}>
                 {result.title}
               </a>
@@ -390,7 +403,8 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
         </div>
         {isTopCard ? (
           <p className="meta">
-            Best match because: {result.matchFields.slice(0, 3).map((field) => `${field} match`).join(", ") || "high overall relevance"}.
+            <span className="tag match-badge top-result-label">Best match</span>{" "}
+            {result.matchFields.slice(0, 3).map((field) => `${field} match`).join(", ") || "high overall relevance"}.
           </p>
         ) : null}
         <div className="result-actions">
@@ -566,16 +580,14 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
 
   return (
     <section className="grid two" style={{ alignItems: "start" }}>
-      <div className="grid" style={{ gap: 20 }}>
+        <div className="grid" style={{ gap: 20 }}>
         <div className="card">
           <div className="section-title">
             <div>
               <h2>Search vault</h2>
-              <p className="meta">Keyword search + filters + saved searches. The part that should actually feel good.</p>
+              <p className="meta">Search across your vault.</p>
             </div>
-            <Link className="button secondary" href="/dashboard">
-              Dashboard
-            </Link>
+            <span className="key-hint" aria-hidden="true">/</span>
           </div>
           <form
             className="search-form"
@@ -584,47 +596,39 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
               await runSearch();
             }}
           >
+            <label className="search-prominent-label" htmlFor="vault-search-input">
+              Search all conversations
+            </label>
             <input
-              className="input"
+              id="vault-search-input"
+              className="input search-prominent-input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Try: philadelphia lease, 4runner insurance, search engine app"
               aria-label="Search query"
             />
-            <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="search-filter-row">
               <input
-                className="input"
+                className="input search-filter-input"
                 value={tag}
                 onChange={(event) => setTag(event.target.value)}
-                placeholder="All tags (type to filter)"
+                placeholder="All tags"
                 list="available-tag-options"
                 aria-label="Filter by tag"
               />
               <input
-                className="input"
+                className="input search-filter-input"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder="All topics (type to filter)"
+                placeholder="All topics"
                 list="available-topic-options"
                 aria-label="Filter by topic"
               />
-            </div>
-            <datalist id="available-tag-options">
-              {filteredTagOptions.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-            <datalist id="available-topic-options">
-              {filteredTopicOptions.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-            <div className="button-row">
               <button className="button primary" type="submit" disabled={loading}>
                 {loading ? "Searching..." : "Search"}
               </button>
               <button
-                className="button secondary"
+                className="button ghost"
                 type="button"
                 onClick={() => {
                   setQuery("");
@@ -636,12 +640,16 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
                 Reset
               </button>
             </div>
-            <div className="button-row">
-              <input className="input" value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Optional saved-search label" aria-label="Saved search label" />
-              <button className="button secondary" type="button" onClick={handleSaveSearch} disabled={saving}>
-                {saving ? "Saving..." : "Save search"}
-              </button>
-            </div>
+            <datalist id="available-tag-options">
+              {filteredTagOptions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            <datalist id="available-topic-options">
+              {filteredTopicOptions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
             {error ? <p className="meta error-text">{error}</p> : null}
           </form>
         </div>
@@ -681,6 +689,11 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
             <h2>Results</h2>
             <p className="meta">{results.total} conversation{results.total === 1 ? "" : "s"} matched.</p>
           </div>
+          {results.results.length > 0 && (query.trim() || tag || topic) ? (
+            <button className="button secondary small" type="button" onClick={handleSaveSearch} disabled={saving}>
+              {saving ? "Saving..." : "Save this search"}
+            </button>
+          ) : null}
         </div>
 
         {results.results.length === 0 ? (

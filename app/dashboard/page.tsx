@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DashboardPanels } from "@/components/dashboard-panels";
 import { getSessionUser } from "@/lib/auth";
@@ -13,6 +14,7 @@ export default async function DashboardPage() {
   return (
     <main className="page-shell">
       <div className="container grid" style={{ gap: 20 }}>
+        <div className="button-row"><Link href="/" className="button secondary">← Back</Link></div>
         <section className="hero">
           <div className="badge-row"><span className="badge">Analytics</span></div>
           <h1>Vault dashboard</h1>
