@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </SignUpButton>
                   </SignedOut>
                   <SignedIn>
-                    <Link href="/dashboard" className="button secondary small">Dashboard</Link>
+                    <Link href="/dashboard" className="button secondary small topbar-link">Dashboard</Link>
                     <UserButton />
                   </SignedIn>
                 </nav>
@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="container topbar-inner">
                 <Link href="/" className="brand">Chat Vault</Link>
                 <nav className="nav-row">
-                  <Link href="/login" className="button secondary small">Login</Link>
+                  <Link href="/login" className="button secondary small topbar-link">Login</Link>
                 </nav>
               </div>
             </header>
