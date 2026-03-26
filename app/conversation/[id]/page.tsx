@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackButton } from "@/components/back-button";
 import { getSessionUser } from "@/lib/auth";
 import { resolveChatGptConversationUrl } from "@/lib/chatgpt-links";
 import { ensureUserRecord, getConversation } from "@/lib/db";
@@ -43,7 +43,7 @@ export default async function ConversationPage({
   return (
     <main className="page-shell">
       <div className="container grid" style={{ gap: 18 }}>
-        <div className="button-row"><Link href="/" className="button secondary">← Back</Link></div>
+        <div className="button-row"><BackButton fallbackHref="/" /></div>
         <section className="card">
           <div className="section-title">
             <div>

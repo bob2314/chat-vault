@@ -420,6 +420,11 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
           <a className="button primary small" href={href} onClick={() => trackResultClick(result.id, rankPosition)}>
             Open this conversation
           </a>
+          {chatGptUrl ? (
+            <a className="button secondary small" href={chatGptUrl} target="_blank" rel="noreferrer">
+              Open in ChatGPT
+            </a>
+          ) : null}
           <button className="button secondary small" type="button" onClick={() => togglePreview({ conversationId: result.id, bestMessageId: result.bestMessageId })}>
             {hasPreview ? "Hide details" : "See more"}
           </button>
