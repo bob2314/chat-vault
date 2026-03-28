@@ -21,8 +21,7 @@ export default async function HomePage() {
             <span className="badge">Per-user vault</span>
           </div>
           <p>
-            A practical POC for importing AI chat history, indexing it sanely, saving useful searches, and surfacing where retrieval is failing.
-            This pass adds per-user isolation, provider abstraction for SQLite vs Typesense, rough ChatGPT import adapters, and a cleaner dashboard.
+            A personal chat memory vault: import ChatGPT data and rediscover AI conversations with tags, saved searches, and dashboard insights.
           </p>
         </section>
 

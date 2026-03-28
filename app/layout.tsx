@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export const metadata = {
   title: "Chat Vault",
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/" className="brand">Chat Vault</Link>
                 <nav className="nav-row">
                   <SignedOut>
+                    <ThemeSwitcher />
                     <SignInButton>
                       <button className="button secondary small" type="button">Sign in</button>
                     </SignInButton>
@@ -28,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </SignUpButton>
                   </SignedOut>
                   <SignedIn>
+                    <ThemeSwitcher />
                     <Link href="/dashboard" className="button secondary small topbar-link">Dashboard</Link>
                     <UserButton />
                   </SignedIn>
@@ -42,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="container topbar-inner">
                 <Link href="/" className="brand">Chat Vault</Link>
                 <nav className="nav-row">
+                  <ThemeSwitcher />
                   <Link href="/login" className="button secondary small topbar-link">Login</Link>
                 </nav>
               </div>
