@@ -126,6 +126,10 @@ Bookmarklet capture support:
 - This is a pragmatic POC focused on speed of iteration.
 - Search provider is runtime-configurable with env vars.
 - Typesense is optional; app falls back to local provider when unavailable.
+- Keyboard shortcuts:
+  - `/` focus search input
+  - `[` previous results page
+  - `]` next results page
 
 ## Release Checklist
 

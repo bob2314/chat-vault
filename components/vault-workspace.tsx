@@ -120,6 +120,8 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
   const [workspaceSummary, setWorkspaceSummary] = useState<WorkspaceSummary | null>(null);
   const [workspaceSummaryLoading, setWorkspaceSummaryLoading] = useState(false);
   const [workspaceSummaryError, setWorkspaceSummaryError] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<"4" | "10" | "20" | "all">("4");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     try {
@@ -181,7 +183,6 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     if (!term) return availableTopics;
     return availableTopics.filter((item) => item.toLowerCase().includes(term));
   }, [availableTopics, topic]);
-  const groupedResults = useMemo(() => groupResults(results.results), [results.results]);
   const recentItems = useMemo(
     () => initialData.results.slice(0, 3),
     [initialData.results]
@@ -216,6 +217,62 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
     }
     return related;
   }, [results.results]);
+  const effectivePageSize = useMemo(() => {
+    if (pageSize === "all") return Math.max(1, results.results.length);
+    return Number(pageSize);
+  }, [pageSize, results.results.length]);
+  const totalPages = useMemo(() => {
+    if (pageSize === "all") return 1;
+    return Math.max(1, Math.ceil(results.results.length / effectivePageSize));
+  }, [pageSize, results.results.length, effectivePageSize]);
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = pageSize === "all" ? 0 : (currentPage - 1) * effectivePageSize;
+  const pagedResults = useMemo(() => {
+    if (results.results.length === 0) return [] as ConversationSearchResult[];
+    if (pageSize === "all") return results.results;
+    return results.results.slice(pageStart, pageStart + effectivePageSize);
+  }, [results.results, pageSize, pageStart, effectivePageSize]);
+  const groupedResults = useMemo(() => groupResults(pagedResults), [pagedResults]);
+
+  useEffect(() => {
+    function onPaginationKeyDown(event: KeyboardEvent) {
+      if (event.key !== "[" && event.key !== "]") return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (pageSize === "all") return;
+
+      if (event.key === "[" && currentPage > 1) {
+        event.preventDefault();
+        setPage((current) => Math.max(1, current - 1));
+      }
+
+      if (event.key === "]" && currentPage < totalPages) {
+        event.preventDefault();
+        setPage((current) => Math.min(totalPages, current + 1));
+      }
+    }
+
+    window.addEventListener("keydown", onPaginationKeyDown);
+    return () => window.removeEventListener("keydown", onPaginationKeyDown);
+  }, [currentPage, totalPages, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [results.results, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   function trackResultClick(resultId: string, rankPosition: number) {
     const payload = {
@@ -299,6 +356,7 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
       setQuery(nextQuery);
       setTag(nextTag);
       setTopic(nextTopic);
+      setPage(1);
     } catch {
       setError("Search failed. Check the server logs, seed data, or your auth session.");
     } finally {
@@ -647,6 +705,7 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
                   setTag("");
                   setTopic("");
                   setResults(initialData);
+                  setPage(1);
                 }}
               >
                 Reset
@@ -755,13 +814,55 @@ export function VaultWorkspace({ initialData, initialSavedSearches }: Props) {
         <div className="section-title">
           <div>
             <h2>Results</h2>
-            <p className="meta">{results.total} conversation{results.total === 1 ? "" : "s"} matched.</p>
+            <p className="meta">
+              {results.total} conversation{results.total === 1 ? "" : "s"} matched.
+              {results.results.length > 0 ? (
+                <> Showing {pageStart + 1}-{Math.min(results.results.length, pageStart + pagedResults.length)}.</>
+              ) : null}
+            </p>
           </div>
-          {results.results.length > 0 && (query.trim() || tag || topic) ? (
-            <button className="button secondary small" type="button" onClick={handleSaveSearch} disabled={saving}>
-              {saving ? "Saving..." : "Save this search"}
-            </button>
-          ) : null}
+          <div className="result-toolbar">
+            <label className="meta pagination-size">
+              Show
+              <select
+                className="select pagination-select"
+                value={pageSize}
+                onChange={(event) => setPageSize(event.target.value as "4" | "10" | "20" | "all")}
+                aria-label="Results per page"
+              >
+                <option value="4">4</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <div className="pagination-controls">
+              <button
+                className="button secondary small"
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={currentPage <= 1 || pageSize === "all"}
+                aria-label="Previous page"
+              >
+                ←
+              </button>
+              <span className="meta pagination-indicator">Page {currentPage} / {totalPages}</span>
+              <button
+                className="button secondary small"
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={currentPage >= totalPages || pageSize === "all"}
+                aria-label="Next page"
+              >
+                →
+              </button>
+            </div>
+            {results.results.length > 0 && (query.trim() || tag || topic) ? (
+              <button className="button secondary small" type="button" onClick={handleSaveSearch} disabled={saving}>
+                {saving ? "Saving..." : "Save this search"}
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {results.results.length === 0 ? (

@@ -33,6 +33,28 @@ function hasDocker() {
   return legacy.status === 0;
 }
 
+function dockerDaemonStatus() {
+  const info = run("docker", ["info"]);
+  if (info.status === 0) {
+    return { ok: true, details: "" };
+  }
+
+  const details = [info.stderr, info.stdout]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  return { ok: false, details };
+}
+
+function hasColima() {
+  return run("colima", ["version"]).status === 0;
+}
+
+function startColima() {
+  return run("colima", ["start"]);
+}
+
 function ensureEnvFile(messages) {
   if (fs.existsSync(envLocalPath)) {
     return envLocalPath;
@@ -89,7 +111,29 @@ function main() {
         "Docker Compose is required for current settings. Install Docker Desktop, then verify either `docker compose version` or `docker-compose version`."
       );
     } else {
-      info.push("Docker + Compose OK.");
+      let daemon = dockerDaemonStatus();
+      if (!daemon.ok && hasColima()) {
+        info.push("Docker daemon is not reachable. Attempting `colima start` automatically...");
+        const colimaStart = startColima();
+        if (colimaStart.status !== 0) {
+          const output = [colimaStart.stderr, colimaStart.stdout].filter(Boolean).join("\n").trim();
+          warnings.push(`Colima start failed: ${(output.split(/\r?\n/)[0] || "Unknown error")}`);
+        } else {
+          info.push("Colima started.");
+          daemon = dockerDaemonStatus();
+        }
+      }
+
+      if (!daemon.ok) {
+        errors.push(
+          "Docker daemon is not reachable. Start Docker Desktop or run `colima start`, then retry."
+        );
+        if (daemon.details) {
+          warnings.push(`Docker error details: ${daemon.details.split(/\r?\n/)[0]}`);
+        }
+      } else {
+        info.push("Docker + Compose OK.");
+      }
     }
   } else {
     warnings.push("Docker not required for current settings (SQLite mode).");
