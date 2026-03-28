@@ -1,6 +1,6 @@
 # Chat Vault
 
-Search, filter, and rediscover archived AI conversations with fast full-text search, tags/topics, saved searches, and analytics.
+A personal chat memory vault: import ChatGPT data and rediscover AI conversations with tags, saved searches, and dashboard insights.
 
 <img width="520" height="665" alt="image" src="https://github.com/user-attachments/assets/e942c1cb-4de5-4922-bb88-bf2849d30b4c" />
 

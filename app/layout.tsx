@@ -4,7 +4,7 @@ import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserBut
 
 export const metadata = {
   title: "Chat Vault",
-  description: "Search and organize imported AI chat history."
+  description: "A personal chat memory vault: import ChatGPT data and rediscover AI conversations with tags, saved searches, and dashboard insights."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
