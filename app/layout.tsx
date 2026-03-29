@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
   return (
-    <html lang="en">
+    <html lang="en" data-theme="graphite" data-density="slim">
       <body>
         {hasClerkKey ? (
           <ClerkProvider>
