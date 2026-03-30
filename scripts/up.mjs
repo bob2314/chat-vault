@@ -43,6 +43,23 @@ function readEnv() {
   return parseEnv(fs.readFileSync(envPath, "utf8"));
 }
 
+function healStaleNextArtifacts() {
+  const nextDir = path.join(cwd, ".next");
+  const serverDir = path.join(nextDir, "server");
+  const runtimeFile = path.join(serverDir, "webpack-runtime.js");
+  const vendorChunksDir = path.join(serverDir, "vendor-chunks");
+
+  if (!fs.existsSync(nextDir) || !fs.existsSync(runtimeFile)) {
+    return;
+  }
+
+  // Guard against known corrupted dev-cache state that causes missing chunk errors.
+  if (!fs.existsSync(vendorChunksDir)) {
+    console.log("\n==> Detected stale Next.js cache artifacts; cleaning .next");
+    fs.rmSync(nextDir, { recursive: true, force: true });
+  }
+}
+
 function startDevServer() {
   console.log("\n==> Starting dev server");
   const child = spawn("npm", ["run", "dev"], {
@@ -54,6 +71,7 @@ function startDevServer() {
 
 function main() {
   runOrExit("Running preflight", "node", ["scripts/preflight.mjs"]);
+  healStaleNextArtifacts();
 
   const env = readEnv();
   const dbProvider = (env.DB_PROVIDER || "sqlite").toLowerCase();

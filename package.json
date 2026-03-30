@@ -15,6 +15,7 @@
     "db:init": "tsx scripts/init-db.ts",
     "db:seed": "tsx scripts/seed.ts",
     "embeddings:backfill": "tsx scripts/backfill-embeddings.ts",
+    "tags:backfill": "tsx scripts/backfill-inferred-tags.ts",
     "infra:up": "npm run preflight && node scripts/compose.mjs up -d",
     "infra:status": "node scripts/compose.mjs ps",
     "infra:down": "node scripts/compose.mjs down",

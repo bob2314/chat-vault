@@ -1,5 +1,6 @@
 import AdmZip from "adm-zip";
 import type { ImportPayload, ImportedConversation, ImportedMessage, Role } from "@/types";
+import { inferTags, normalizeTag } from "@/lib/tag-rules";
 import { inferTopics } from "@/lib/topic-rules";
 import { slugify, uniqueStrings } from "@/lib/utils";
 
@@ -97,7 +98,8 @@ export function normalizePayload(payload: unknown): ImportPayload {
 
     const fullText = messages.map((message) => message.content).join("\n\n");
     const topics = uniqueStrings([...(conversation.topics ?? []), ...inferTopics(fullText)]);
-    const tags = uniqueStrings(conversation.tags ?? []);
+    const normalizedSeedTags = uniqueStrings((conversation.tags ?? []).map((tag) => normalizeTag(tag)));
+    const tags = inferTags(fullText, [...normalizedSeedTags, ...topics]);
     const title = conversation.title?.trim() || titleFromMessages(messages);
     const id = conversation.id?.trim() || `${slugify(title)}-${index + 1}`;
     const createdAt = conversation.createdAt ?? messages[0]?.createdAt ?? new Date().toISOString();

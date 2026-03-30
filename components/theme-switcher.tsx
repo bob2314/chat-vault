@@ -5,7 +5,16 @@ import { useEffect, useState } from "react";
 const STORAGE_KEY = "chatvault.ui.theme";
 const DENSITY_STORAGE_KEY = "chatvault.ui.density";
 
-type ThemeId = "material" | "indigo" | "graphite" | "amoled" | "teal" | "violet" | "high-contrast" | "signal-red";
+type ThemeId =
+  | "material"
+  | "indigo"
+  | "graphite"
+  | "amoled"
+  | "teal"
+  | "violet"
+  | "high-contrast"
+  | "signal-red"
+  | "neon-panels";
 type Density = "comfortable" | "slim";
 
 const themes: Array<{ id: ThemeId; label: string }> = [
@@ -16,7 +25,8 @@ const themes: Array<{ id: ThemeId; label: string }> = [
   { id: "teal", label: "Teal" },
   { id: "violet", label: "Violet" },
   { id: "high-contrast", label: "High Contrast" },
-  { id: "signal-red", label: "Signal Red" }
+  { id: "signal-red", label: "Signal Red" },
+  { id: "neon-panels", label: "Neon Panels" }
 ];
 
 function applyTheme(theme: ThemeId) {
