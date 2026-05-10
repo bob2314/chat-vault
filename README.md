@@ -8,7 +8,7 @@ A personal chat memory vault: import ChatGPT data and rediscover AI conversation
 
 - Imports conversation history from JSON payloads or ChatGPT-style exports
 - Supports one-click "Sync from GPT" ZIP import flow
-- Includes bookmarklet-based "sync current chat page" capture flow
+- Includes bookmarklet-based incremental sync (new/updated chats only)
 - Supports fast search with filters (`query`, `tag`, `topic`)
 - Stores saved searches per user
 - Tracks no-result searches and daily search activity
@@ -116,10 +116,11 @@ ChatGPT export support:
 
 Bookmarklet capture support:
 
-- Click `Copy Sync Bookmarklet` in the Import panel
+- Click `Copy Incremental Sync Bookmarklet` in the Import panel
 - Save the copied code as a browser bookmark
-- Open a ChatGPT conversation page and click that bookmark
-- Chat Vault opens `/capture` and pushes the current visible conversation into your vault
+- Open ChatGPT and click that bookmark
+- The bookmarklet reads ChatGPT conversation metadata, fetches only chats updated since the last bookmarklet sync, and posts them to `/capture`
+- Sync cursor is stored in ChatGPT browser local storage (`chatvault.gpt.lastSyncUnix`)
 
 ## Notes
 

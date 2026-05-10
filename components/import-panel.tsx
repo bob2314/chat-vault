@@ -16,63 +16,232 @@ export function ImportPanel() {
 
   function getBookmarkletCode(appOrigin: string) {
     const source = `
-      (() => {
+      (async () => {
         try {
           const appOrigin = ${JSON.stringify(appOrigin)};
           const captureUrl = appOrigin + "/capture";
-          const popup = window.open(captureUrl, "_blank");
-          if (!popup) {
-            alert("Popup blocked. Please allow popups for this action.");
+          const host = window.location.hostname.toLowerCase();
+          const isChatGptHost = host === "chatgpt.com" || host === "chat.openai.com" || host.endsWith(".chatgpt.com");
+          if (!isChatGptHost) {
+            window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
+            alert("Run this bookmarklet from a ChatGPT tab (chatgpt.com). Opened ChatGPT in a new tab for you.");
             return;
           }
 
-          const nodes = Array.from(document.querySelectorAll('[data-message-author-role]'));
-          const messages = nodes
-            .map((node) => {
-              const roleRaw = node.getAttribute("data-message-author-role") || "user";
-              const role = roleRaw === "assistant" || roleRaw === "system" ? roleRaw : "user";
-              const content = (node.innerText || "").trim();
-              return { role, content };
-            })
-            .filter((item) => item.content.length > 0);
+          const syncCursorKey = "chatvault.gpt.lastSyncUnix";
+          const lastSyncUnix = Number(window.localStorage.getItem(syncCursorKey) || 0);
 
-          if (!messages.length) {
-            alert("No messages detected on this page.");
+          const roleFromAuthor = (author) => {
+            const role = typeof author === "string" ? author : author?.role;
+            return role === "assistant" || role === "system" ? role : "user";
+          };
+
+          const extractText = (content) => {
+            if (!content) return "";
+            if (typeof content === "string") return content.trim();
+            if (Array.isArray(content)) {
+              return content.map(extractText).filter(Boolean).join("\\n").trim();
+            }
+            if (typeof content === "object") {
+              const parts = Array.isArray(content.parts) ? content.parts : [];
+              const text = typeof content.text === "string" ? content.text : "";
+              return [text, ...parts.map(extractText)].filter(Boolean).join("\\n").trim();
+            }
+            return "";
+          };
+          const extractVisibleMessagesFromDom = () => {
+            const nodes = Array.from(document.querySelectorAll("[data-message-author-role]"));
+            return nodes
+              .map((node) => {
+                const roleRaw = node.getAttribute("data-message-author-role") || "user";
+                const role = roleRaw === "assistant" || roleRaw === "system" ? roleRaw : "user";
+                const content = (node.innerText || "").trim();
+                return { role, content, created_at: null };
+              })
+              .filter((message) => message.content.length > 0);
+          };
+
+          const listAllConversations = async () => {
+            const pageSize = 100;
+            let offset = 0;
+            const summaries = [];
+            while (true) {
+              const response = await fetch(window.location.origin + "/backend-api/conversations?offset=" + offset + "&limit=" + pageSize, {
+                credentials: "include"
+              });
+              if (!response.ok) {
+                throw new Error("Could not read conversations list (status " + response.status + ").");
+              }
+              const data = await response.json();
+              const items = Array.isArray(data?.items)
+                ? data.items
+                : Array.isArray(data)
+                  ? data
+                  : [];
+              if (!items.length) break;
+              summaries.push(...items);
+              if (items.length < pageSize) break;
+              offset += pageSize;
+            }
+            return summaries;
+          };
+
+          const fetchConversation = async (id) => {
+            const response = await fetch(window.location.origin + "/backend-api/conversation/" + id, {
+              credentials: "include"
+            });
+            if (!response.ok) return null;
+            return response.json();
+          };
+
+          const summaries = await listAllConversations();
+          const incrementalCandidates = summaries.filter((item) => {
+            const updated = Number(item?.update_time || item?.updated_at || 0);
+            return updated > lastSyncUnix;
+          });
+          const changedSummaries = [...incrementalCandidates];
+          const currentConversationMatch = window.location.pathname.match(/\\/c\\/([a-zA-Z0-9-]+)/);
+          const currentConversationId = currentConversationMatch ? currentConversationMatch[1] : null;
+          let usedCurrentConversationFallback = false;
+          if (changedSummaries.length === 0 && currentConversationId) {
+            changedSummaries.push({ id: currentConversationId });
+            usedCurrentConversationFallback = true;
+          }
+
+          if (!changedSummaries.length) {
+            alert("No new ChatGPT conversations since last sync.");
             return;
           }
 
-          const titleFromH1 = document.querySelector("h1")?.textContent?.trim();
-          const conversationIdMatch = window.location.pathname.match(/\\/c\\/([a-zA-Z0-9-]+)/);
-          const conversationId = conversationIdMatch ? ("chatgpt-" + conversationIdMatch[1]) : undefined;
-          const title = titleFromH1 || document.title.replace(/\\s*-\\s*ChatGPT\\s*$/i, "").trim() || "ChatGPT conversation";
+          const normalizedConversations = [];
+          let maxUpdatedUnix = lastSyncUnix;
+
+          for (const summary of changedSummaries) {
+            const id = summary?.id;
+            if (!id) continue;
+            const detail = await fetchConversation(id);
+            const isCurrentConversation = currentConversationId === id;
+            const fallbackDomMessages = isCurrentConversation ? extractVisibleMessagesFromDom() : [];
+            if ((!detail || typeof detail !== "object") && fallbackDomMessages.length === 0) continue;
+
+            const mapping = detail?.mapping && typeof detail.mapping === "object" ? detail.mapping : {};
+            const mappedMessages = Object.values(mapping)
+              .map((node) => node?.message)
+              .filter(Boolean)
+              .sort((a, b) => {
+                const aTime = Number(a?.create_time || 0);
+                const bTime = Number(b?.create_time || 0);
+                return aTime - bTime;
+              })
+              .map((message) => {
+                const role = roleFromAuthor(message.author);
+                const content = extractText(message.content);
+                const createdAt = message.create_time
+                  ? new Date(Number(message.create_time) * 1000).toISOString()
+                  : null;
+                return { role, content, created_at: createdAt };
+              })
+              .filter((message) => message.content.length > 0);
+            const messages = mappedMessages.length > 0 ? mappedMessages : fallbackDomMessages;
+
+            if (!messages.length) continue;
+
+            const createdUnix = Number(summary?.create_time || detail?.create_time || 0);
+            const updatedUnix = Number(summary?.update_time || detail?.update_time || createdUnix || 0);
+            if (updatedUnix > maxUpdatedUnix) maxUpdatedUnix = updatedUnix;
+
+            normalizedConversations.push({
+              external_id: "chatgpt-" + id,
+              title: (summary?.title || detail?.title || "ChatGPT conversation").trim(),
+              source_url: "https://chatgpt.com/c/" + id,
+              created_at: createdUnix ? new Date(createdUnix * 1000).toISOString() : new Date().toISOString(),
+              updated_at: updatedUnix ? new Date(updatedUnix * 1000).toISOString() : new Date().toISOString(),
+              messages
+            });
+          }
+
+          if (!normalizedConversations.length) {
+            alert("No importable messages found in changed conversations.");
+            return;
+          }
+
           const now = new Date().toISOString();
+          const maxUpdatedIso = normalizedConversations.reduce((max, item) => {
+            if (!item.updated_at) return max;
+            if (!max) return item.updated_at;
+            return item.updated_at > max ? item.updated_at : max;
+          }, null);
+          const finalMaxUpdatedUnix = maxUpdatedIso ? Math.floor(new Date(maxUpdatedIso).getTime() / 1000) : lastSyncUnix;
           const payload = {
             source: "chatvault-bookmarklet",
             payload: {
               source: "chatgpt-bookmarklet",
               source_url: window.location.href,
               captured_at: now,
-              parser_version: "bookmarklet-v1",
-              conversation: {
-                external_id: conversationId,
-                title,
-                created_at: now,
-                updated_at: now,
-                messages: messages.map((message) => ({
-                  role: message.role,
-                  content: message.content
-                }))
+              parser_version: "bookmarklet-v2-incremental",
+              conversations: normalizedConversations,
+              cursor_max_updated_unix: finalMaxUpdatedUnix,
+              sync_summary: {
+                last_sync_unix: lastSyncUnix,
+                total_summaries_seen: summaries.length,
+                changed_summary_count: incrementalCandidates.length,
+                sent_conversation_count: normalizedConversations.length,
+                current_conversation_fallback: usedCurrentConversationFallback
               }
             }
           };
+          const popup = window.open(captureUrl, "_blank");
+          if (!popup) {
+            alert("Popup blocked. Please allow popups for this action.");
+            return;
+          }
+
+          let acknowledged = false;
+          const onAck = (event) => {
+            if (event.origin !== appOrigin) return;
+            const data = event.data;
+            if (!data || data.source !== "chatvault-capture-ack") return;
+            acknowledged = true;
+            if (data.ok) {
+              const nextCursor =
+                typeof data.cursorMaxUpdatedUnix === "number"
+                  ? data.cursorMaxUpdatedUnix
+                  : finalMaxUpdatedUnix || Math.floor(Date.now() / 1000);
+              window.localStorage.setItem(syncCursorKey, String(nextCursor));
+            }
+            window.removeEventListener("message", onAck);
+          };
+          window.addEventListener("message", onAck);
 
           const send = () => popup.postMessage(payload, appOrigin);
           setTimeout(send, 600);
           setTimeout(send, 1500);
           setTimeout(send, 2800);
+          setTimeout(() => {
+            if (acknowledged) return;
+            window.removeEventListener("message", onAck);
+          }, 8000);
         } catch (error) {
           alert("Bookmarklet failed: " + (error?.message || error));
         }
+      })();
+    `;
+
+    return `javascript:${source.replace(/\s+/g, " ").trim()}`;
+  }
+
+  function getResetCursorBookmarkletCode() {
+    const source = `
+      (() => {
+        const host = window.location.hostname.toLowerCase();
+        const isChatGptHost = host === "chatgpt.com" || host === "chat.openai.com" || host.endsWith(".chatgpt.com");
+        if (!isChatGptHost) {
+          window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
+          alert("Open ChatGPT, then run this reset bookmarklet there.");
+          return;
+        }
+        window.localStorage.removeItem("chatvault.gpt.lastSyncUnix");
+        alert("Chat Vault GPT sync cursor reset. The next incremental sync will scan from the beginning.");
       })();
     `;
 
@@ -317,9 +486,24 @@ export function ImportPanel() {
       }
       const code = getBookmarkletCode(window.location.origin);
       await navigator.clipboard.writeText(code);
-      setBookmarkletStatus("Bookmarklet copied. Add it to your bookmarks bar, then click it on a ChatGPT conversation.");
+      setBookmarkletStatus(
+        "Bookmarklet copied. Add it to your bookmarks bar, open ChatGPT, and click it to incrementally sync new/updated conversations."
+      );
     } catch (error) {
       setBookmarkletStatus(error instanceof Error ? error.message : "Could not copy bookmarklet.");
+    }
+  }
+
+  async function copyResetCursorBookmarklet() {
+    setBookmarkletStatus(null);
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API unavailable in this browser.");
+      }
+      await navigator.clipboard.writeText(getResetCursorBookmarkletCode());
+      setBookmarkletStatus("Reset bookmarklet copied. Add it to your bookmarks bar, open ChatGPT, and click it to force the next sync to rescan.");
+    } catch (error) {
+      setBookmarkletStatus(error instanceof Error ? error.message : "Could not copy reset bookmarklet.");
     }
   }
 
@@ -339,7 +523,10 @@ export function ImportPanel() {
       </div>
       <div className="button-row" style={{ marginBottom: 12 }}>
         <button className="button secondary" type="button" onClick={copyBookmarklet}>
-          Copy Sync Bookmarklet
+          Copy Incremental Sync Bookmarklet
+        </button>
+        <button className="button secondary" type="button" onClick={copyResetCursorBookmarklet}>
+          Copy Reset GPT Cursor
         </button>
       </div>
       {bookmarkletStatus ? <p className="meta" style={{ marginBottom: 12 }}>{bookmarkletStatus}</p> : null}

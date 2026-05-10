@@ -66,27 +66,39 @@ export class TypesenseSearchProvider implements SearchProvider {
     updatedAt: string;
     messageCount: number;
   }) {
-    await this.ensureCollection();
-    await this.client.collections(this.collection).documents().upsert({
-      id: `${input.userId}:${input.conversationId}`,
-      userId: input.userId,
-      conversationId: input.conversationId,
-      title: input.title,
-      fullText: input.fullText,
-      tags: input.tags,
-      topics: input.topics,
-      createdAt: Date.parse(input.createdAt),
-      updatedAt: Date.parse(input.updatedAt),
-      messageCount: input.messageCount
-    });
+    try {
+      await this.ensureCollection();
+      await this.client.collections(this.collection).documents().upsert({
+        id: `${input.userId}:${input.conversationId}`,
+        userId: input.userId,
+        conversationId: input.conversationId,
+        title: input.title,
+        fullText: input.fullText,
+        tags: input.tags,
+        topics: input.topics,
+        createdAt: Date.parse(input.createdAt),
+        updatedAt: Date.parse(input.updatedAt),
+        messageCount: input.messageCount
+      });
+    } catch (error) {
+      console.warn(
+        "[typesense] Index upsert failed; continuing with fallback provider.",
+        error instanceof Error ? error.message : String(error)
+      );
+      await fallback.upsertConversationIndex(input);
+    }
   }
 
   async deleteConversationIndex(userId: string, conversationId: string) {
-    await this.ensureCollection();
     try {
+      await this.ensureCollection();
       await this.client.collections(this.collection).documents(`${userId}:${conversationId}`).delete();
-    } catch {
-      // ignore missing docs in the POC
+    } catch (error) {
+      console.warn(
+        "[typesense] Index delete failed; continuing with fallback provider.",
+        error instanceof Error ? error.message : String(error)
+      );
+      await fallback.deleteConversationIndex(userId, conversationId);
     }
   }
 
